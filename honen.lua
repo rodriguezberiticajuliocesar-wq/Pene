@@ -135,14 +135,20 @@ local CONFIG = {
 		{ section = "Muscle King Machines", label = "Muscle King Squat", object = "Muscle King Squat", fallback = CFrame.new(-8758.4424, 32.8662, -6043.0693) },
 	},
 	FullTrainAreas = {
+		-- Todos los gimnasios principales; Full Train descubre sus máquinas
+		-- automáticamente desde workspace.machinesFolder usando machineType y strengthGain.
+		{ section = "Industrial Gym", center = Vector3.new(-5165, 57, 4945) },
+		{ section = "Jungle Gym", center = Vector3.new(-7894, 6, 2386) },
+		{ section = "Muscle King Gym", center = Vector3.new(-8799, 17, -5798) },
+		{ section = "Legends Gym", center = Vector3.new(4429, 991, -3880) },
 		{ section = "Eternal Gym", center = Vector3.new(-6768, 0, -1287) },
 		{ section = "Mythical Gym", center = Vector3.new(2255, 0, 1071) },
 		{ section = "Frost Gym", center = Vector3.new(-2650, 0, -393) },
+		{ section = "Tiny Gym / Tiny Island", center = Vector3.new(50, 0, 1918) },
 		{ section = "Playa", center = Vector3.new(9, 0, 100) },
 		{ section = "Magma Ring", center = Vector3.new(4400, 0, -8400) },
 		{ section = "Desert Ring", center = Vector3.new(900, 0, -7000) },
 		{ section = "Boxing Ring", center = Vector3.new(-1900, 0, -5820) },
-		{ section = "Tiny Island", center = Vector3.new(50, 0, 1918) },
 	},
 	FullTrainMachines = {},
 	Teleports = {
@@ -160,6 +166,9 @@ local CONFIG = {
 		{ "Mythical Gym", Vector3.new(2255, 7, 1071) },
 		{ "Frost Gym", Vector3.new(-2650, 7, -393) },
 		{ "Tiny Gym", Vector3.new(50, 7, 1918) },
+		{ "Tiny Island", Vector3.new(-37.1, 9.2, 1919) },
+		{ "Main Island", Vector3.new(16.07, 9.08, 133.8) },
+		{ "Beach (Main)", Vector3.new(-8, 9, -169.2) },
 		{ "Beach", Vector3.new(9, 7, 100) },
 		{ "Boss Arena", Vector3.new(0, 5, -805) },
 		{ "Boss Battle", Vector3.new(0, 18, -1080) },
@@ -250,8 +259,8 @@ local CONFIG = {
 }
 
 local C = CONFIG.Colors
-local UI_FONT = Enum.Font.FredokaOne
-C.fontBold = Enum.Font.FredokaOne
+local UI_FONT = Enum.Font.Gotham
+C.fontBold = Enum.Font.GothamBold
 do
 	local previousController = Env.HonenHONEN
 	if previousController and type(previousController.Shutdown) == "function" then
@@ -12315,11 +12324,13 @@ autoLiftGamepassToggle = addToggle(autoFarmPage, "🍀 Auto Lift GAMEPASS 🍀",
 end)
 	Controller.AutoLiftGamepassToggle = autoLiftGamepassToggle
 local repToggles = {}
+local fastRep20Toggle
 
 local function addExclusiveRep(label, key, tools, interval)
 	local toggle
 	toggle = addToggle(autoFarmPage, label, function(enabled)
 		if enabled then
+			if fastRep20Toggle then fastRep20Toggle:Set(false) end
 			FastFarm.StopFastModesForManualFarm()
 			FastFarm.StopMachineForExercise()
 			for _, other in ipairs(repToggles) do
@@ -12332,6 +12343,34 @@ local function addExclusiveRep(label, key, tools, interval)
 	end)
 	repToggles[#repToggles + 1] = toggle
 end
+
+-- Imported from Main.luau.lua: controlled Fast Rep mode capped at 20 reps/second.
+fastRep20Toggle = addToggle(autoFarmPage, "⚡ Fast Rep (20 reps/s)", function(enabled)
+	State.fastRep20 = enabled == true
+	if not State.fastRep20 then
+		stopThread("fastRep20")
+		return
+	end
+	FastFarm.StopFastModesForManualFarm()
+	FastFarm.StopMachineForExercise()
+	for _, other in ipairs(repToggles) do
+		other:Set(false)
+	end
+	startThread("fastRep20", function()
+		local event = LP:FindFirstChild("muscleEvent")
+		while State.running and State.fastRep20 do
+			if not event or not event.Parent then
+				event = LP:FindFirstChild("muscleEvent")
+			end
+			if event then pcall(function() event:FireServer("rep") end) end
+			task.wait(0.05)
+		end
+	end)
+end)
+addCleanup(function()
+	State.fastRep20 = false
+	stopThread("fastRep20")
+end)
 addExclusiveRep("🏋️ Auto Weight 🏋️", "autoWeight", { "Weight" }, 0.01)
 addExclusiveRep("🤸 Auto Handstands 🤸", "autoHandstands", { "Handstands", "Handstand" }, 0.01)
 addExclusiveRep("💪 Auto Pushups 💪", "autoLift", { "Pushup", "Pushups" }, 0.01)
@@ -12421,7 +12460,7 @@ FastFarm.FullTrainToggles = fullTrainToggles
 end
 
 State.ThemePresets = {
-	Galaxia = { base = Color3.fromRGB(6, 8, 17), panel = Color3.fromRGB(11, 15, 27), row = Color3.fromRGB(19, 24, 39), rowHover = Color3.fromRGB(29, 37, 58), tab = Color3.fromRGB(13, 18, 31), tabOn = Color3.fromRGB(28, 39, 65), cyan = Color3.fromRGB(105, 205, 255), blue = Color3.fromRGB(159, 139, 246), green = Color3.fromRGB(126, 224, 175), yellow = Color3.fromRGB(238, 206, 111), orange = Color3.fromRGB(236, 159, 93), red = Color3.fromRGB(255, 55, 82), white = Color3.fromRGB(246, 248, 252), soft = Color3.fromRGB(225, 230, 239), dim = Color3.fromRGB(165, 174, 189), black = Color3.fromRGB(0, 0, 0), art = Color3.fromRGB(204, 211, 255) },
+	Galaxia = { base = Color3.fromRGB(7, 10, 17), panel = Color3.fromRGB(12, 18, 29), row = Color3.fromRGB(19, 29, 44), rowHover = Color3.fromRGB(27, 46, 66), tab = Color3.fromRGB(11, 20, 33), tabOn = Color3.fromRGB(22, 54, 78), cyan = Color3.fromRGB(72, 211, 255), blue = Color3.fromRGB(70, 145, 255), green = Color3.fromRGB(95, 230, 170), yellow = Color3.fromRGB(255, 211, 105), orange = Color3.fromRGB(255, 156, 83), red = Color3.fromRGB(255, 77, 98), white = Color3.fromRGB(246, 250, 255), soft = Color3.fromRGB(213, 226, 240), dim = Color3.fromRGB(143, 164, 188), black = Color3.fromRGB(0, 0, 0), art = Color3.fromRGB(70, 195, 255) },
 	Violeta = { base = Color3.fromRGB(10, 6, 20), panel = Color3.fromRGB(20, 12, 37), row = Color3.fromRGB(31, 20, 50), rowHover = Color3.fromRGB(47, 29, 73), tab = Color3.fromRGB(24, 14, 42), tabOn = Color3.fromRGB(52, 31, 82), cyan = Color3.fromRGB(190, 142, 255), blue = Color3.fromRGB(139, 104, 255), green = Color3.fromRGB(126, 224, 175), yellow = Color3.fromRGB(240, 207, 121), orange = Color3.fromRGB(240, 146, 105), red = Color3.fromRGB(255, 76, 116), white = Color3.fromRGB(250, 247, 255), soft = Color3.fromRGB(230, 220, 244), dim = Color3.fromRGB(169, 153, 190), black = Color3.fromRGB(0, 0, 0), art = Color3.fromRGB(222, 190, 255) },
 	["Carmesí"] = { base = Color3.fromRGB(17, 6, 10), panel = Color3.fromRGB(31, 11, 17), row = Color3.fromRGB(45, 18, 26), rowHover = Color3.fromRGB(68, 25, 37), tab = Color3.fromRGB(37, 13, 21), tabOn = Color3.fromRGB(74, 25, 40), cyan = Color3.fromRGB(255, 113, 145), blue = Color3.fromRGB(218, 87, 126), green = Color3.fromRGB(128, 225, 168), yellow = Color3.fromRGB(245, 205, 117), orange = Color3.fromRGB(246, 143, 91), red = Color3.fromRGB(255, 58, 91), white = Color3.fromRGB(255, 247, 249), soft = Color3.fromRGB(240, 218, 224), dim = Color3.fromRGB(188, 151, 161), black = Color3.fromRGB(0, 0, 0), art = Color3.fromRGB(255, 180, 195) },
 	Esmeralda = { base = Color3.fromRGB(4, 13, 14), panel = Color3.fromRGB(8, 25, 26), row = Color3.fromRGB(13, 38, 38), rowHover = Color3.fromRGB(19, 57, 55), tab = Color3.fromRGB(9, 31, 31), tabOn = Color3.fromRGB(17, 61, 58), cyan = Color3.fromRGB(84, 231, 204), blue = Color3.fromRGB(79, 194, 179), green = Color3.fromRGB(117, 239, 173), yellow = Color3.fromRGB(232, 217, 116), orange = Color3.fromRGB(233, 156, 91), red = Color3.fromRGB(255, 77, 99), white = Color3.fromRGB(243, 255, 253), soft = Color3.fromRGB(212, 240, 235), dim = Color3.fromRGB(145, 183, 176), black = Color3.fromRGB(0, 0, 0), art = Color3.fromRGB(170, 255, 235) },
