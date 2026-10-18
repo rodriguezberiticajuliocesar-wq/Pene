@@ -1751,7 +1751,7 @@ utils.connect(player.CharacterAdded, function(character)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- ANTI-AFK
+-- ANTI-
 -- ═══════════════════════════════════════════════════════════════
 utils.connect(player.Idled, function()
     if _G.HonenxAntiAFK ~= true then return end
@@ -5477,6 +5477,34 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
         end
         tabs.quests.EnchantData.WorkerActive = false
     end)
+end)
+-- ═══════════════════════════════════════════════════════════════
+-- ANTI-AFK INDEPENDIENTE
+-- ═══════════════════════════════════════════════════════════════
+tabs.main:AddSection("Anti-AFK")
+
+_G.HonenxAntiAFK = true
+tabs.main.AntiAFKSwitch = tabs.main:AddSwitch("Anti AFK", function(state)
+    _G.HonenxAntiAFK = state
+    if state then
+        utils.notify("Anti-AFK", "✅ Activado", 2, "success")
+    else
+        utils.notify("Anti-AFK", "❌ Desactivado", 2, "info")
+    end
+end)
+tabs.main.AntiAFKSwitch:Set(true)
+
+task.spawn(function()
+    while utils.isCurrent() do
+        task.wait(60)
+        if _G.HonenxAntiAFK then
+            pcall(function()
+                services.VirtualUser:CaptureController()
+                services.VirtualUser:ClickButton2(Vector2.new(0, 0))
+                services.VirtualUser:ClickButton1(Vector2.new(0, 0))
+            end)
+        end
+    end
 end)
 -- ═══════════════════════════════════════════════════════════════
 -- EMERGENCY STOP
