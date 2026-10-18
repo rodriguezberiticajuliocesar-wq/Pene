@@ -5285,7 +5285,7 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
--- TAB MISIONES (Auto Enchant Quests)
+-- TAB MISIONES (Auto Enchant Quests - Cerebro Completo)
 -- ═══════════════════════════════════════════════════════════════
 
 tabs.quests:AddSection("Auto Enchant Quests")
@@ -5293,10 +5293,12 @@ tabs.quests:AddSection("Auto Enchant Quests")
 tabs.quests.EnchantData = { 
     Running = false, 
     WorkerActive = false,
-    SelectedQuest = "Todas" 
+    SelectedQuest = "Todas",
+    ActiveTask = "Esperando..."
 }
 
 local enchantQuestStatus = tabs.quests:AddLabel("Status: Inactive")
+local taskInfoLabel = tabs.quests:AddLabel("Tarea actual: Ninguna")
 
 local enchantDropdown = tabs.quests:AddDropdown("Misión de Encantamiento", function(selection)
     tabs.quests.EnchantData.SelectedQuest = selection
@@ -5308,6 +5310,10 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
     tabs.quests.EnchantData.Running = state
     if not state then
         enchantQuestStatus:SetText("Status: Inactive")
+        taskInfoLabel:SetText("Tarea actual: Ninguna")
+        -- Apagar funciones automáticas por seguridad
+        _G.killAll = false
+        if tabs.rep and tabs.rep.FastRepData then tabs.rep.FastRepData.Running = false end
         return
     end
     if tabs.quests.EnchantData.WorkerActive then return end
@@ -5332,6 +5338,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
             local activeQuest = nil
             local activeReq = nil
 
+            -- 1. BUSCAR LA MISIÓN ACTIVA
             for _, quest in ipairs(enchantFolder:GetChildren()) do
                 local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
                                    (quest.Name == tabs.quests.EnchantData.SelectedQuest)
@@ -5352,22 +5359,30 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                 if activeQuest then break end
             end
 
+            -- 2. SI HAY MISIÓN, EJECUTAR LÓGICA
             if activeQuest and activeReq then
                 local reqObj = activeQuest.requirements:FindFirstChild(activeReq)
                 local progress = reqObj:FindFirstChild("progress").Value
                 local target = reqObj.Value
 
-                enchantQuestStatus:SetText("Status: " .. activeQuest.Name .. " (" .. activeReq .. " " .. progress .. "/" .. target .. ")")
+                tabs.quests.EnchantData.ActiveTask = activeReq
+                enchantQuestStatus:SetText("Status: " .. activeQuest.Name)
+                taskInfoLabel:SetText("Tarea: " .. activeReq .. " (" .. progress .. "/" .. target .. ")")
 
                 local reqNameLower = string.lower(activeReq)
                 
+                -- ==========================================
+                -- LÓGICA INTELIGENTE (Activa las funciones del Hub)
+                -- ==========================================
+                
                 if string.find(reqNameLower, "evolve") then
+                    -- TAREA: EVOLUCIONAR MASCOTAS
                     local petsFolder = player:FindFirstChild("petsFolder")
                     local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
                     local hasPets = uniquePets and #uniquePets:GetChildren() > 0
 
                     if not hasPets then
-                        enchantQuestStatus:SetText("Status: Comprando pet barato...")
+                        taskInfoLabel:SetText("Comprando pet barato para evolucionar...")
                         local shared = game:GetService("ReplicatedStorage"):FindFirstChild("shared")
                         local runtime = shared and shared:FindFirstChild("runtime")
                         local petShopFolder = runtime and runtime:FindFirstChild("cPetShopFolder")
@@ -5377,6 +5392,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                         end
                         task.wait(1)
                     else
+                        taskInfoLabel:SetText("Evolucionando mascotas...")
                         for _, pet in ipairs(uniquePets:GetChildren()) do
                             if not tabs.quests.EnchantData.Running then break end
                             pcall(function() petEvolveEvent:FireServer("evolvePet", pet.Name) end)
@@ -5384,20 +5400,52 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                         end
                     end
 
-                elseif string.find(reqNameLower, "gain") or string.find(reqNameLower, "devoted") then
+                elseif string.find(reqNameLower, "gain") or string.find(reqNameLower, "strength") or string.find(reqNameLower, "weight") or string.find(reqNameLower, "devoted") then
+                    -- TAREA: GANAR FUERZA / REPS
+                    taskInfoLabel:SetText("Haciendo Reps (Fuerza)...")
                     pcall(function() player.muscleEvent:FireServer("rep") end)
-                    task.wait(0.1)
+                    task.wait(0.05)
 
-                elseif string.find(reqNameLower, "kill") or string.find(reqNameLower, "brawl") then
-                    _G.killAll = true
+                elseif string.find(reqNameLower, "kill") or string.find(reqNameLower, "brawl") or string.find(reqNameLower, "punch") or string.find(reqNameLower, "player") then
+                    -- TAREA: MATAR JUGADORES / PELEAR
+                    taskInfoLabel:SetText("Activando Kill Aura / Combate...")
+                    _G.killAll = true -- Activa tu propio Kill Everyone del Hub
                     task.wait(0.5)
 
-                else
+                elseif string.find(reqNameLower, "minute") or string.find(reqNameLower, "time") then
+                    -- TAREA: ESPERAR MINUTOS
+                    taskInfoLabel:SetText("Esperando tiempo (AFK)...")
+                    task.wait(5)
+
+                elseif string.find(reqNameLower, "rock") or string.find(reqNameLower, "dura") then
+                    -- TAREA: ROMPER ROCAS
+                    taskInfoLabel:SetText("Activando Auto Rock...")
+                    if tabs.farming and tabs.farming.RockSwitch then
+                        tabs.farming.RockSwitch:Set(true, true)
+                    end
                     task.wait(1)
+
+                elseif string.find(reqNameLower, "squat") or string.find(reqNameLower, "lift") then
+                    -- TAREA: MÁQUINAS (Squat/Lift)
+                    taskInfoLabel:SetText("Activando Auto Squat/Lift...")
+                    if tabs.farming and tabs.farming.SquatExerciseSwitch then
+                        tabs.farming.SquatExerciseSwitch:Set(true, true)
+                    end
+                    task.wait(1)
+
+                else
+                    -- TAREA DESCONOCIDA (Intenta hacer reps por si acaso)
+                    taskInfoLabel:SetText("Tarea desconocida ("..activeReq.."). Haciendo reps...")
+                    pcall(function() player.muscleEvent:FireServer("rep") end)
+                    task.wait(0.1)
                 end
 
             else
+                -- 3. SI NO HAY MISIÓN ACTIVA, RECLAMAR
                 _G.killAll = false
+                if tabs.farming and tabs.farming.RockSwitch then tabs.farming.RockSwitch:Set(false, true) end
+                if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(false, true) end
+
                 local claimedAny = false
 
                 for _, quest in ipairs(enchantFolder:GetChildren()) do
@@ -5413,7 +5461,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                                 if prog and prog.Value < req.Value then allComplete = false break end
                             end
                             if allComplete then
-                                enchantQuestStatus:SetText("Status: ¡Reclamando " .. quest.Name .. "!")
+                                taskInfoLabel:SetText("¡Misión completada! Reclamando...")
                                 if questsEvent then
                                     pcall(function() questsEvent:FireServer("claimQuest", quest.Name) end)
                                 end
@@ -5425,7 +5473,8 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                 end
 
                 if not claimedAny then
-                    enchantQuestStatus:SetText("Status: Sin misiones completadas. Esperando...")
+                    enchantQuestStatus:SetText("Status: Todo completado.")
+                    taskInfoLabel:SetText("Esperando nueva misión...")
                 end
             end
             task.wait(0.5)
