@@ -5501,6 +5501,101 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
+-- AUTO-FUSIÓN INTELIGENTE (Calcula el mejor %)
+-- ═══════════════════════════════════════════════════════════════
+
+tabs.quests:AddSection("Auto-Fusión Inteligente")
+
+tabs.quests.FusionData = {
+    Running = false,
+    WorkerActive = false,
+}
+
+local fusionStatus = tabs.quests:AddLabel("Status: Inactive")
+
+-- Función para calcular el "Poder" de una mascota
+local function getPetPower(pet)
+    local power = 0
+    local statsToSum = {"strength", "agility", "durability", "damage"}
+    for _, statName in ipairs(statsToSum) do
+        local statObj = pet:FindFirstChild(statName)
+        if statObj and statObj:IsA("NumberValue") then
+            power = power + statObj.Value
+        end
+    end
+    return power
+end
+
+tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
+    tabs.quests.FusionData.Running = state
+    if not state then
+        fusionStatus:SetText("Status: Inactive")
+        return
+    end
+    if tabs.quests.FusionData.WorkerActive then return end
+    tabs.quests.FusionData.WorkerActive = true
+
+    task.spawn(function()
+        while utils.isCurrent() and tabs.quests.FusionData.Running do
+            local petsFolder = player:FindFirstChild("petsFolder")
+            local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
+
+            if not uniquePets or #uniquePets:GetChildren() < 2 then
+                fusionStatus:SetText("Status: Necesitas al menos 2 mascotas para fusionar.")
+                task.wait(2)
+                continue
+            end
+
+            -- 1. ORDENAR MASCOTAS POR PODER (De mayor a menor)
+            local sortedPets = {}
+            for _, pet in ipairs(uniquePets:GetChildren()) do
+                table.insert(sortedPets, { Pet = pet, Power = getPetPower(pet) })
+            end
+            table.sort(sortedPets, function(a, b) return a.Power > b.Power end)
+
+            -- 2. BUSCAR EL BOTÓN DE FUSIÓN EN LA PANTALLA
+            local fusionButton = nil
+            local playerGui = player:FindFirstChild("PlayerGui")
+            
+            local function findFusionButton(obj)
+                if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+                    local nameLower = string.lower(obj.Name)
+                    -- Buscamos botones que digan Fusion, Combine, Mix o que estén en un menú de fusión
+                    if string.find(nameLower, "fusion") or string.find(nameLower, "combine") or string.find(nameLower, "mix") then
+                        if obj.Visible and obj.Active then
+                            fusionButton = obj
+                            return
+                        end
+                    end
+                end
+                for _, child in ipairs(obj:GetChildren()) do
+                    if not fusionButton then findFusionButton(child) end
+                end
+            end
+
+            if playerGui then findFusionButton(playerGui) end
+
+            if fusionButton then
+                fusionStatus:SetText("Status: ¡Fusionando!")
+                -- Si encontramos el botón, lo clickeamos con VirtualUser para simular un clic real
+                pcall(function()
+                    services.VirtualUser:Button1Down(Vector2.new(fusionButton.AbsolutePosition.X + fusionButton.AbsoluteSize.X/2, fusionButton.AbsolutePosition.Y + fusionButton.AbsoluteSize.Y/2))
+                    task.wait(0.1)
+                    services.VirtualUser:Button1Up(Vector2.new(fusionButton.AbsolutePosition.X + fusionButton.AbsoluteSize.X/2, fusionButton.AbsolutePosition.Y + fusionButton.AbsoluteSize.Y/2))
+                end)
+                task.wait(2) -- Espera a que termine la animación de fusión
+            else
+                -- Si no encontramos el botón, solo mostramos las mejores mascotas
+                local bestPet = sortedPets[1]
+                local secondBest = sortedPets[2]
+                fusionStatus:SetText("Status: Mejores: " .. bestPet.Pet.Name .. " + " .. secondBest.Pet.Name .. " | Abre el menú de Fusión.")
+                task.wait(1)
+            end
+        end
+        tabs.quests.FusionData.WorkerActive = false
+    end)
+end)
+-- ═══════════════════════════════════════════════════════════════
 -- EMERGENCY STOP
 -- ═══════════════════════════════════════════════════════════════
 tabs.info:AddSection("Emergency")
