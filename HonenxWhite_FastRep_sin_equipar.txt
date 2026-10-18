@@ -5331,6 +5331,79 @@ tabs.info:AddButton("🛑 EMERGENCY STOP", function()
     utils.notify("Emergency Stop", "Todas las funciones detenidas", 4, "error")
 end)
 -- ═══════════════════════════════════════════════════════════════
+-- SERVER HOPPER (Bajo Ping / Pocos Jugadores)
+-- ═══════════════════════════════════════════════════════════════
+tabs.teleport:AddSection("Server Hopper")
+
+local PlaceID_MuscleLegends = 3623096087
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+-- Función interna para buscar y saltar
+local function HopToSmallServer()
+    local player = game.Players.LocalPlayer
+    
+    -- Mostramos notificación de que está buscando
+    utils.notify("Server Hop", "Buscando servidor con pocos jugadores...", 3, "info")
+    
+    -- Hacemos la petición a la API de Roblox
+    local apiUrl = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100", PlaceID_MuscleLegends)
+    
+    local success, response = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(apiUrl))
+    end)
+    
+    if not success or not response or not response.data then
+        utils.notify("Server Hop", "Error al obtener la lista de servidores.", 4, "error")
+        return
+    end
+    
+    -- Filtramos los servidores que NO estén llenos y tengan al menos 1 jugador (para no entrar a uno vacío y que cargue lento)
+    local bestServer = nil
+    local lowestPlayers = 999
+    
+    for _, server in ipairs(response.data) do
+        -- server.playing = jugadores actuales, server.maxPlayers = máximo
+        if server.playing < server.maxPlayers and server.playing > 0 then
+            if server.playing < lowestPlayers then
+                lowestPlayers = server.playing
+                bestServer = server
+            end
+        end
+    end
+    
+    if bestServer then
+        utils.notify("Server Hop", "Servidor encontrado con " .. bestServer.playing .. " jugadores. Saltando...", 3, "success")
+        -- Esperamos un momento para que se lea la notificación
+        task.wait(1.5)
+        -- Teletransportamos al jugador
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(PlaceID_MuscleLegends, bestServer.id, player)
+        end)
+    else
+        utils.notify("Server Hop", "No se encontraron servidores disponibles.", 3, "warning")
+    end
+end
+
+-- Botón para ejecutar la búsqueda manual
+tabs.teleport:AddButton("🔍 Buscar Servidor Vacío (Bajo Ping)", function()
+    HopToSmallServer()
+end)
+
+-- Opción para hacerlo automático (opcional, cuidado con el spam)
+tabs.teleport:AddSwitch("Auto Server Hop (Pocos Jugadores)", function(state)
+    _G.AutoServerHop = state
+    if state then
+        task.spawn(function()
+            while _G.AutoServerHop and utils.isCurrent() do
+                HopToSmallServer()
+                -- Esperamos 15 segundos antes de volver a intentar para no saturar
+                task.wait(15)
+            end
+        end)
+    end
+end)
+-- ═══════════════════════════════════════════════════════════════
 -- CIERRE
 -- ═══════════════════════════════════════════════════════════════
 utils.notify("HonenxWhite", "🎉 Hub completo cargado correctamente", 4, "success")
