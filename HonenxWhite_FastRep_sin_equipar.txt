@@ -5284,31 +5284,49 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
--- AUTO QUEST MAESTRO (Hace la tarea y la reclama)
+-- AUTO ENCHANT QUEST (Misiones de Giros)
 -- ═══════════════════════════════════════════════════════════════
 
-tabs.inventory:AddSection("Auto Quest Maestro")
+tabs.inventory:AddSection("Auto Enchant Quests")
 
-tabs.inventory.MasterQuestData = { Running = false, WorkerActive = false }
-local masterQuestStatus = tabs.inventory:AddLabel("Status: Inactive")
+tabs.inventory.EnchantQuestData = { 
+    Running = false, 
+    WorkerActive = false,
+    SelectedQuest = "Todas" 
+}
 
-tabs.inventory:AddSwitch("Auto Quest (Completar y Reclamar)", function(state)
-    tabs.inventory.MasterQuestData.Running = state
+local enchantQuestStatus = tabs.inventory:AddLabel("Status: Inactive")
+
+-- Dropdown para elegir la misión
+local enchantQuestDropdown = tabs.inventory:AddDropdown("Misión de Encantamiento", function(selection)
+    tabs.inventory.EnchantQuestData.SelectedQuest = selection
+end)
+enchantQuestDropdown:Add("Todas")
+enchantQuestDropdown:Add("Mystic Evolution")
+enchantQuestDropdown:Add("Pet Trainer")
+enchantQuestDropdown:Add("Mega Collector")
+
+tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
+    tabs.inventory.EnchantQuestData.Running = state
     if not state then
-        masterQuestStatus:SetText("Status: Inactive")
+        enchantQuestStatus:SetText("Status: Inactive")
         return
     end
-    if tabs.inventory.MasterQuestData.WorkerActive then return end
-    tabs.inventory.MasterQuestData.WorkerActive = true
+    if tabs.inventory.EnchantQuestData.WorkerActive then return end
+    tabs.inventory.EnchantQuestData.WorkerActive = true
 
     task.spawn(function()
         local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
         local questsEvent = rEvents and rEvents:FindFirstChild("questsEvent")
+        local petEvolveEvent = rEvents and rEvents:FindFirstChild("petEvolveEvent")
+        local petShopRemote = rEvents and rEvents:FindFirstChild("cPetShopRemote")
         
-        while utils.isCurrent() and tabs.inventory.MasterQuestData.Running do
+        while utils.isCurrent() and tabs.inventory.EnchantQuestData.Running do
             local questsFolder = player:FindFirstChild("Quests")
-            if not questsFolder then
-                masterQuestStatus:SetText("Status: Abre el menú de misiones...")
+            local enchantFolder = questsFolder and questsFolder:FindFirstChild("Enchant Quests")
+
+            if not enchantFolder then
+                enchantQuestStatus:SetText("Status: Abre el menú de misiones...")
                 task.wait(2)
                 continue
             end
@@ -5316,49 +5334,46 @@ tabs.inventory:AddSwitch("Auto Quest (Completar y Reclamar)", function(state)
             local activeQuest = nil
             local activeReq = nil
 
-            -- Buscamos la primera misión que no esté completada en todas las categorías
-            for _, catName in ipairs({"Daily Quests", "Weekly Quests", "Enchant Quests"}) do
-                local cat = questsFolder:FindFirstChild(catName)
-                if cat then
-                    for _, quest in ipairs(cat:GetChildren()) do
-                        local reqs = quest:FindFirstChild("requirements")
-                        if reqs then
-                            for _, req in ipairs(reqs:GetChildren()) do
-                                local prog = req:FindFirstChild("progress")
-                                if prog and prog.Value < req.Value then
-                                    activeQuest = quest
-                                    activeReq = req.Name
-                                    break
-                                end
+            -- Buscamos la misión de encantamiento seleccionada que no esté completa
+            for _, quest in ipairs(enchantFolder:GetChildren()) do
+                local isSelected = (tabs.inventory.EnchantQuestData.SelectedQuest == "Todas") or 
+                                   (quest.Name == tabs.inventory.EnchantQuestData.SelectedQuest)
+
+                if isSelected then
+                    local reqs = quest:FindFirstChild("requirements")
+                    if reqs then
+                        for _, req in ipairs(reqs:GetChildren()) do
+                            local prog = req:FindFirstChild("progress")
+                            if prog and prog.Value < req.Value then
+                                activeQuest = quest
+                                activeReq = req.Name
+                                break
                             end
                         end
-                        if activeQuest then break end
                     end
                 end
                 if activeQuest then break end
             end
 
-            -- Si encontramos una misión incompleta
             if activeQuest and activeReq then
                 local reqObj = activeQuest.requirements:FindFirstChild(activeReq)
                 local progress = reqObj:FindFirstChild("progress").Value
                 local target = reqObj.Value
 
-                masterQuestStatus:SetText("Status: " .. activeQuest.Name .. " (" .. activeReq .. " " .. progress .. "/" .. target .. ")")
+                enchantQuestStatus:SetText("Status: " .. activeQuest.Name .. " (" .. activeReq .. " " .. progress .. "/" .. target .. ")")
 
-                -- 1. LEER LA TAREA Y ACTUAR
                 local reqNameLower = string.lower(activeReq)
                 
+                -- Lógica para completar la tarea
                 if string.find(reqNameLower, "evolve") then
-                    -- TAREA DE EVOLUCIONAR
                     local petsFolder = player:FindFirstChild("petsFolder")
                     local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
                     local hasPets = uniquePets and #uniquePets:GetChildren() > 0
 
                     if not hasPets then
-                        masterQuestStatus:SetText("Status: Comprando pet barato...")
-                        local petShopRemote = rEvents and rEvents:FindFirstChild("cPetShopRemote")
-                        local runtime = game:GetService("ReplicatedStorage").shared.runtime
+                        enchantQuestStatus:SetText("Status: Comprando pet barato...")
+                        local shared = game:GetService("ReplicatedStorage"):FindFirstChild("shared")
+                        local runtime = shared and shared:FindFirstChild("runtime")
                         local petShopFolder = runtime and runtime:FindFirstChild("cPetShopFolder")
                         if petShopFolder and petShopRemote then
                             local cheapest = petShopFolder:GetChildren()[1]
@@ -5366,72 +5381,59 @@ tabs.inventory:AddSwitch("Auto Quest (Completar y Reclamar)", function(state)
                         end
                         task.wait(1)
                     else
-                        -- Evolucionar los que haya
-                        local petEvolveEvent = rEvents and rEvents:FindFirstChild("petEvolveEvent")
                         for _, pet in ipairs(uniquePets:GetChildren()) do
-                            if not tabs.inventory.MasterQuestData.Running then break end
+                            if not tabs.inventory.EnchantQuestData.Running then break end
                             pcall(function() petEvolveEvent:FireServer("evolvePet", pet.Name) end)
                             task.wait(0.1)
                         end
                     end
 
-                elseif string.find(reqNameLower, "gain") or string.find(reqNameLower, "devoted") or string.find(reqNameLower, "strength") or string.find(reqNameLower, "weight") then
-                    -- TAREA DE FUERZA / REPS
+                elseif string.find(reqNameLower, "gain") or string.find(reqNameLower, "devoted") then
                     pcall(function() player.muscleEvent:FireServer("rep") end)
                     task.wait(0.1)
 
-                elseif string.find(reqNameLower, "kill") or string.find(reqNameLower, "brawl") or string.find(reqNameLower, "punch") then
-                    -- TAREA DE MATAR / PELEAR
-                    _G.killAll = true -- Activa tu propio sistema de Kill Everyone del Hub
-                    task.wait(0.5)
-
-                elseif string.find(reqNameLower, "minute") or string.find(reqNameLower, "time") then
-                    -- TAREA DE TIEMPO
-                    masterQuestStatus:SetText("Status: Esperando tiempo (AFK)...")
-                    task.wait(5)
+                elseif string.find(reqNameLower, "hatch") or string.find(reqNameLower, "pet") then
+                    -- Tarea de abrir huevos/mascotas (puedes usar tu Auto Buy Pet aquí)
+                    task.wait(1)
 
                 else
-                    -- Cualquier otra tarea (Rocks, etc.)
-                    task.wait(1)
+                    task.wait(1) -- Si no reconoce la tarea, espera un poco
                 end
 
             else
-                -- 2. NO HAY MISIONES INCOMPLETAS: RECLAMAR TODAS LAS COMPLETADAS
-                _G.killAll = false -- Apagamos el Kill All por si acaso
+                -- Reclamar misiones completadas
                 local claimedAny = false
-
-                for _, catName in ipairs({"Daily Quests", "Weekly Quests", "Enchant Quests"}) do
-                    local cat = questsFolder:FindFirstChild(catName)
-                    if cat then
-                        for _, quest in ipairs(cat:GetChildren()) do
-                            local reqs = quest:FindFirstChild("requirements")
-                            if reqs then
-                                local allComplete = true
-                                for _, req in ipairs(reqs:GetChildren()) do
-                                    local prog = req:FindFirstChild("progress")
-                                    if prog and prog.Value < req.Value then allComplete = false break end
+                for _, quest in ipairs(enchantFolder:GetChildren()) do
+                    local isSelected = (tabs.inventory.EnchantQuestData.SelectedQuest == "Todas") or 
+                                       (quest.Name == tabs.inventory.EnchantQuestData.SelectedQuest)
+                    
+                    if isSelected then
+                        local reqs = quest:FindFirstChild("requirements")
+                        if reqs then
+                            local allComplete = true
+                            for _, req in ipairs(reqs:GetChildren()) do
+                                local prog = req:FindFirstChild("progress")
+                                if prog and prog.Value < req.Value then allComplete = false break end
+                            end
+                            if allComplete then
+                                enchantQuestStatus:SetText("Status: ¡Reclamando " .. quest.Name .. "!")
+                                if questsEvent then
+                                    pcall(function() questsEvent:FireServer("claimQuest", quest.Name) end)
                                 end
-                                if allComplete then
-                                    masterQuestStatus:SetText("Status: ¡Reclamando " .. quest.Name .. "!")
-                                    if questsEvent then
-                                        pcall(function() questsEvent:FireServer("claimQuest", quest.Name) end)
-                                    end
-                                    claimedAny = true
-                                    task.wait(2) -- Espera entre reclamos
-                                end
+                                claimedAny = true
+                                task.wait(2) -- Espera para no saturar
                             end
                         end
                     end
                 end
 
                 if not claimedAny then
-                    masterQuestStatus:SetText("Status: Todas completadas. Esperando reinicio...")
+                    enchantQuestStatus:SetText("Status: Esperando nueva misión...")
                 end
             end
             task.wait(0.5)
         end
-        _G.killAll = false
-        tabs.inventory.MasterQuestData.WorkerActive = false
+        tabs.inventory.EnchantQuestData.WorkerActive = false
     end)
 end)
 -- ═══════════════════════════════════════════════════════════════
