@@ -2913,29 +2913,34 @@ tabs.rep.FastRepWorkerLoop = function()
     if tabs.rep.FastRepData.WorkerActive then return end
     tabs.rep.FastRepData.WorkerActive = true
     local data = tabs.rep.FastRepData
-    local interval = 0.05 -- Velocidad ajustada para que el servidor no lo rechace
+    local interval = 0.05 
     
     while utils.isCurrent() and data.Running do
         local char = player.Character
         if char then
-            -- 1. Se asegura de tener la pesa equipada
-            local weight = char:FindFirstChild("Pushups") or char:FindFirstChild("Situps") or char:FindFirstChild("Handstands")
-            if not weight then
-                local backpackWeight = player.Backpack:FindFirstChild("Pushups") or player.Backpack:FindFirstChild("Situps")
-                if backpackWeight then
-                    char.Humanoid:EquipTool(backpackWeight)
-                    weight = backpackWeight
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            local equippedTool = char:FindFirstChildWhichIsA("Tool")
+            local validTools = {["Pushups"]=true, ["Situps"]=true, ["Handstands"]=true, ["Weight"]=true}
+            
+            -- Si no tiene nada en la mano, intenta equipar la primera pesa que encuentre en la mochila
+            if not equippedTool or not validTools[equippedTool.Name] then
+                for _, tool in pairs(player.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") and validTools[tool.Name] then
+                        humanoid:EquipTool(tool)
+                        equippedTool = tool
+                        break
+                    end
                 end
             end
 
-            -- 2. Envía el comando "rep" que sí valida las máquinas/pesas
-            if weight then
+            -- Si ya tiene una pesa válida (Pushups, Weight, etc.), hace la repetición
+            if equippedTool and validTools[equippedTool.Name] then
                 pcall(function()
                     player.muscleEvent:FireServer("rep")
                 end)
             end
         end
-        if fastRepStatus then fastRepStatus:SetText("Status: Fast Rep Activo") end
+        if fastRepStatus then fastRepStatus:SetText("Status: Fast Rep Global") end
         task.wait(interval)
     end
     data.WorkerActive = false
@@ -2977,19 +2982,32 @@ task.spawn(function()
         if UltraState.Enabled then
             local char = player.Character
             if char then
-                local weight = char:FindFirstChild("Pushups") or char:FindFirstChild("Situps") or char:FindFirstChild("Handstands")
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                local equippedTool = char:FindFirstChildWhichIsA("Tool")
+                local validTools = {["Pushups"]=true, ["Situps"]=true, ["Handstands"]=true, ["Weight"]=true}
                 
-                if weight then
-                    -- Bucle rápido de reps (20 por ciclo)
+                -- Si no tiene la pesa en la mano, la busca en la mochila
+                if not equippedTool or not validTools[equippedTool.Name] then
+                    for _, tool in pairs(player.Backpack:GetChildren()) do
+                        if tool:IsA("Tool") and validTools[tool.Name] then
+                            humanoid:EquipTool(tool)
+                            equippedTool = tool
+                            break
+                        end
+                    end
+                end
+
+                -- Si tiene la pesa, hace el bucle rápido
+                if equippedTool and validTools[equippedTool.Name] then
                     for _ = 1, 20 do
                         if not UltraState.Enabled then break end
                         pcall(function() 
                             player.muscleEvent:FireServer("rep")
                         end)
                     end
-                    task.wait(0.02) -- Pausa mínima para no crashear
+                    task.wait(0.02)
                 else
-                    task.wait(0.5) -- Espera si no hay pesa equipada
+                    task.wait(0.5)
                 end
             else
                 task.wait(0.5)
@@ -3000,10 +3018,10 @@ task.spawn(function()
     end
 end)
 
-tabs.rep:AddSwitch("🚀 Ultra Fast Rep (Nuevo)", function(state)
+tabs.rep:AddSwitch("🚀 Ultra Fast Rep (Global)", function(state)
     UltraState.Enabled = state
     if state then
-        utils.notify("Ultra Fast Rep", "🚀 Modo activado. ¡Equipa la pesa!", 3, "success")
+        utils.notify("Ultra Fast Rep", "🚀 Modo Global activado. Detectando pesa...", 3, "success")
     else
         utils.notify("Ultra Fast Rep", "⏸️ Desactivado", 2, "info")
     end
