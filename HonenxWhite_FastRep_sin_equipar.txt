@@ -5257,7 +5257,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB MISIONES (Auto Enchant Quests - Conectado a la Tienda)
+-- TAB MISIONES (Auto Enchant Quests - Diccionario Definitivo)
 -- ═══════════════════════════════════════════════════════════════
 
 tabs.quests:AddSection("Auto Enchant Quests")
@@ -5284,6 +5284,9 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
         enchantQuestStatus:SetText("Status: Inactive")
         taskInfoLabel:SetText("Tarea actual: Ninguna")
         _G.killAll = false
+        if tabs.farming and tabs.farming.RockSwitch then tabs.farming.RockSwitch:Set(false, true) end
+        if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(false, true) end
+        if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(false, true) end
         return
     end
     if tabs.quests.EnchantData.WorkerActive then return end
@@ -5294,7 +5297,6 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
         local questsEvent = rEvents and rEvents:FindFirstChild("questsEvent")
         local petEvolveEvent = rEvents and rEvents:FindFirstChild("petEvolveEvent")
         
-        -- Usamos las variables de la tienda que ya tiene tu Hub
         local petShopRemote = tabs.inventory.PetShopRemote
         local petShopFolder = tabs.inventory.PetShopFolder
         
@@ -5311,7 +5313,6 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
             local activeQuest = nil
             local activeReq = nil
 
-            -- 1. BUSCAR LA MISIÓN ACTIVA
             for _, quest in ipairs(enchantFolder:GetChildren()) do
                 local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
                                    (quest.Name == tabs.quests.EnchantData.SelectedQuest)
@@ -5332,7 +5333,6 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                 if activeQuest then break end
             end
 
-            -- 2. EJECUTAR LÓGICA
             if activeQuest and activeReq then
                 local reqObj = activeQuest.requirements:FindFirstChild(activeReq)
                 local progress = reqObj:FindFirstChild("progress").Value
@@ -5344,6 +5344,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
 
                 local cleanReq = string.lower(activeReq)
                 
+                -- Función para detectar si la tarea contiene alguna palabra clave
                 local function contains(list)
                     for _, word in ipairs(list) do
                         if string.find(cleanReq, word) then return true end
@@ -5351,37 +5352,23 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                     return false
                 end
 
-                if contains({"evolve", "evo", "upgrade"}) then
-                    -- ==========================================
-                    -- TAREA: EVOLUCIONAR (Conectado a la Tienda)
-                    -- ==========================================
+                -- ==========================================
+                -- SÚPER DICCIONARIO DE PALABRAS CLAVE
+                -- ==========================================
+
+                -- 1. EVOLUCIONAR / MASCOTAS
+                if contains({"evolve", "evo", "upgrade", "pet", "mascot", "fusion", "combine"}) then
                     local petsFolder = player:FindFirstChild("petsFolder")
                     local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
                     local hasPets = uniquePets and #uniquePets:GetChildren() > 0
 
                     if not hasPets then
-                        taskInfoLabel:SetText("Comprando pet barato de la tienda...")
+                        taskInfoLabel:SetText("Comprando pet barato...")
                         if petShopFolder and petShopRemote then
-                            local cheapest = nil
-                            local lowestPrice = math.huge
-                            
-                            -- Buscamos el pet más barato (asumiendo que el precio está en un atributo)
-                            for _, petItem in ipairs(petShopFolder:GetChildren()) do
-                                local price = petItem:GetAttribute("Price") or petItem:GetAttribute("Cost") or 0
-                                if price < lowestPrice then
-                                    lowestPrice = price
-                                    cheapest = petItem
-                                end
-                            end
-                            
-                            if cheapest then
-                                pcall(function()
-                                    petShopRemote:InvokeServer(cheapest)
-                                end)
-                                taskInfoLabel:SetText("Comprando " .. cheapest.Name .. "...")
-                            end
+                            local cheapest = petShopFolder:GetChildren()[1]
+                            if cheapest then pcall(function() petShopRemote:InvokeServer(cheapest) end) end
                         end
-                        task.wait(1.5) -- Espera a que el servidor procese la compra
+                        task.wait(1.5)
                     else
                         taskInfoLabel:SetText("Evolucionando mascotas...")
                         for _, pet in ipairs(uniquePets:GetChildren()) do
@@ -5391,56 +5378,63 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                         end
                     end
 
-                elseif contains({"gain", "strength", "weight", "devoted", "rep", "muscle"}) then
-                    taskInfoLabel:SetText("Haciendo Reps (Fuerza)...")
-                    pcall(function() player.muscleEvent:FireServer("rep") end)
+                -- 2. FUERZA / REPS / GIMNASIO
+                elseif contains({"gain", "strength", "weight", "devoted", "rep", "muscle", "exercise", "train", "lift", "squat", "machine", "gym"}) then
+                    taskInfoLabel:SetText("Activando Entrenamiento / Reps...")
+                    -- Activa las máquinas del Hub si es de máquinas
+                    if string.find(cleanReq, "machine") or string.find(cleanReq, "squat") or string.find(cleanReq, "lift") or string.find(cleanReq, "gym") then
+                        if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(true, true) end
+                        if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(true, true) end
+                    else
+                        pcall(function() player.muscleEvent:FireServer("rep") end)
+                    end
                     task.wait(0.05)
 
-                elseif contains({"kill", "brawl", "punch", "player", "fight", "combat", "defeat"}) then
+                -- 3. MATAR / COMBATE
+                elseif contains({"kill", "brawl", "punch", "player", "fight", "combat", "defeat", "eliminat", "pvp"}) then
                     taskInfoLabel:SetText("Activando Kill Aura / Combate...")
                     _G.killAll = true
                     task.wait(0.5)
 
-                elseif contains({"rock", "dura", "punching"}) then
+                -- 4. ROCAS / DURABILIDAD
+                elseif contains({"rock", "dura", "punching", "mine", "mining"}) then
                     taskInfoLabel:SetText("Activando Auto Rock...")
                     if tabs.farming and tabs.farming.RockSwitch then
                         tabs.farming.RockSwitch:Set(true, true)
                     end
                     task.wait(1)
 
-                elseif contains({"squat", "lift", "machine", "gym"}) then
-                    taskInfoLabel:SetText("Activando Auto Squat/Lift...")
-                    if tabs.farming and tabs.farming.SquatExerciseSwitch then
-                        tabs.farming.SquatExerciseSwitch:Set(true, true)
-                    end
+                -- 5. HUEVOS / ABRIR
+                elseif contains({"hatch", "egg", "open", "spin", "wheel"}) then
+                    taskInfoLabel:SetText("Esperando abrir huevos...")
                     task.wait(1)
 
-                elseif contains({"hatch", "egg", "open"}) then
-                    taskInfoLabel:SetText("Esperando abrir huevos (Auto Pet)...")
-                    task.wait(1)
-
-                elseif contains({"rebirth", "reset", "prestige"}) then
+                -- 6. REBIRTH / RESET
+                elseif contains({"rebirth", "reset", "prestige", "ascend"}) then
                     taskInfoLabel:SetText("Activando Auto Rebirth...")
                     pcall(function()
                         services.ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest")
                     end)
                     task.wait(1)
 
-                elseif contains({"minute", "time", "play"}) then
+                -- 7. TIEMPO / AFK
+                elseif contains({"minute", "time", "play", "online", "hour"}) then
                     taskInfoLabel:SetText("Esperando tiempo (AFK)...")
                     task.wait(5)
 
+                -- 8. TAREA DESCONOCIDA
                 else
-                    taskInfoLabel:SetText("Tarea desconocida ("..activeReq.."). Reps por defecto...")
+                    taskInfoLabel:SetText("Tarea desconocida ("..activeReq.."). Haciendo reps...")
                     pcall(function() player.muscleEvent:FireServer("rep") end)
                     task.wait(0.1)
                 end
 
             else
-                -- 3. RECLAMAR
+                -- RECLAMAR
                 _G.killAll = false
                 if tabs.farming and tabs.farming.RockSwitch then tabs.farming.RockSwitch:Set(false, true) end
                 if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(false, true) end
+                if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(false, true) end
 
                 local claimedAny = false
 
