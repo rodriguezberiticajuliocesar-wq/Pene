@@ -1730,6 +1730,7 @@ local tabs = {
     rebirth   = window:AddTab("Rebirth"),
     boss      = window:AddTab("Jefes"),
     inventory = window:AddTab("Mascotas"),
+    quests    = window:AddTab("Misiones"), 
     boosts    = window:AddTab("Mejoras"),
     teleport  = window:AddTab("Teletransporte"),
     stats     = window:AddTab("Estadísticas"),
@@ -5284,36 +5285,36 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
--- AUTO ENCHANT QUEST (Misiones de Giros)
+-- TAB MISIONES (Auto Enchant Quest)
 -- ═══════════════════════════════════════════════════════════════
 
-tabs.inventory:AddSection("Auto Enchant Quests")
+tabs.quests:AddSection("Misiones de Encantamiento")
 
-tabs.inventory.EnchantQuestData = { 
+local enchantQuestStatus = tabs.quests:AddLabel("Status: Inactive")
+
+tabs.quests.EnchantData = { 
     Running = false, 
     WorkerActive = false,
     SelectedQuest = "Todas" 
 }
 
-local enchantQuestStatus = tabs.inventory:AddLabel("Status: Inactive")
-
 -- Dropdown para elegir la misión
-local enchantQuestDropdown = tabs.inventory:AddDropdown("Misión de Encantamiento", function(selection)
-    tabs.inventory.EnchantQuestData.SelectedQuest = selection
+local enchantQuestDropdown = tabs.quests:AddDropdown("Seleccionar Misión", function(selection)
+    tabs.quests.EnchantData.SelectedQuest = selection
 end)
 enchantQuestDropdown:Add("Todas")
 enchantQuestDropdown:Add("Mystic Evolution")
 enchantQuestDropdown:Add("Pet Trainer")
 enchantQuestDropdown:Add("Mega Collector")
 
-tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
-    tabs.inventory.EnchantQuestData.Running = state
+tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
+    tabs.quests.EnchantData.Running = state
     if not state then
         enchantQuestStatus:SetText("Status: Inactive")
         return
     end
-    if tabs.inventory.EnchantQuestData.WorkerActive then return end
-    tabs.inventory.EnchantQuestData.WorkerActive = true
+    if tabs.quests.EnchantData.WorkerActive then return end
+    tabs.quests.EnchantData.WorkerActive = true
 
     task.spawn(function()
         local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
@@ -5321,12 +5322,12 @@ tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
         local petEvolveEvent = rEvents and rEvents:FindFirstChild("petEvolveEvent")
         local petShopRemote = rEvents and rEvents:FindFirstChild("cPetShopRemote")
         
-        while utils.isCurrent() and tabs.inventory.EnchantQuestData.Running do
+        while utils.isCurrent() and tabs.quests.EnchantData.Running do
             local questsFolder = player:FindFirstChild("Quests")
             local enchantFolder = questsFolder and questsFolder:FindFirstChild("Enchant Quests")
 
             if not enchantFolder then
-                enchantQuestStatus:SetText("Status: Abre el menú de misiones...")
+                enchantQuestStatus:SetText("Status: Abre el menú de misiones en el juego...")
                 task.wait(2)
                 continue
             end
@@ -5334,10 +5335,10 @@ tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
             local activeQuest = nil
             local activeReq = nil
 
-            -- Buscamos la misión de encantamiento seleccionada que no esté completa
+            -- Buscar la misión seleccionada
             for _, quest in ipairs(enchantFolder:GetChildren()) do
-                local isSelected = (tabs.inventory.EnchantQuestData.SelectedQuest == "Todas") or 
-                                   (quest.Name == tabs.inventory.EnchantQuestData.SelectedQuest)
+                local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
+                                   (quest.Name == tabs.quests.EnchantData.SelectedQuest)
 
                 if isSelected then
                     local reqs = quest:FindFirstChild("requirements")
@@ -5382,7 +5383,7 @@ tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
                         task.wait(1)
                     else
                         for _, pet in ipairs(uniquePets:GetChildren()) do
-                            if not tabs.inventory.EnchantQuestData.Running then break end
+                            if not tabs.quests.EnchantData.Running then break end
                             pcall(function() petEvolveEvent:FireServer("evolvePet", pet.Name) end)
                             task.wait(0.1)
                         end
@@ -5393,19 +5394,18 @@ tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
                     task.wait(0.1)
 
                 elseif string.find(reqNameLower, "hatch") or string.find(reqNameLower, "pet") then
-                    -- Tarea de abrir huevos/mascotas (puedes usar tu Auto Buy Pet aquí)
                     task.wait(1)
 
                 else
-                    task.wait(1) -- Si no reconoce la tarea, espera un poco
+                    task.wait(1)
                 end
 
             else
-                -- Reclamar misiones completadas
+                -- Reclamar si está completo
                 local claimedAny = false
                 for _, quest in ipairs(enchantFolder:GetChildren()) do
-                    local isSelected = (tabs.inventory.EnchantQuestData.SelectedQuest == "Todas") or 
-                                       (quest.Name == tabs.inventory.EnchantQuestData.SelectedQuest)
+                    local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
+                                       (quest.Name == tabs.quests.EnchantData.SelectedQuest)
                     
                     if isSelected then
                         local reqs = quest:FindFirstChild("requirements")
@@ -5421,19 +5421,19 @@ tabs.inventory:AddSwitch("Auto Enchant Quest", function(state)
                                     pcall(function() questsEvent:FireServer("claimQuest", quest.Name) end)
                                 end
                                 claimedAny = true
-                                task.wait(2) -- Espera para no saturar
+                                task.wait(2)
                             end
                         end
                     end
                 end
 
                 if not claimedAny then
-                    enchantQuestStatus:SetText("Status: Esperando nueva misión...")
+                    enchantQuestStatus:SetText("Status: Todas completadas. Esperando...")
                 end
             end
             task.wait(0.5)
         end
-        tabs.inventory.EnchantQuestData.WorkerActive = false
+        tabs.quests.EnchantData.WorkerActive = false
     end)
 end)
 -- ═══════════════════════════════════════════════════════════════
