@@ -5501,7 +5501,7 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
--- AUTO-FUSIÓN INTELIGENTE (Calcula el mejor %)
+-- AUTO-FUSIÓN INTELIGENTE (Solo Únicas, sin Candado, sin Evolucionar)
 -- ═══════════════════════════════════════════════════════════════
 
 tabs.quests:AddSection("Auto-Fusión Inteligente")
@@ -5526,7 +5526,32 @@ local function getPetPower(pet)
     return power
 end
 
-tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
+-- Función para validar si la mascota se puede fusionar
+local function isValidForFusion(pet)
+    -- 1. Revisar si tiene candado (Locked)
+    local lockObj = pet:FindFirstChild("locked") or pet:FindFirstChild("Locked") or pet:FindFirstChild("isLocked")
+    if lockObj then
+        if lockObj:IsA("BoolValue") and lockObj.Value == true then return false end
+        if lockObj:IsA("NumberValue") and lockObj.Value == 1 then return false end
+    end
+    
+    -- 2. Revisar si está evolucionada (si el nombre elegido es distinto al original)
+    local chosen = pet:FindFirstChild("chosenName")
+    local baseName = pet.Name
+    if chosen and chosen.Value and chosen.Value ~= baseName then
+        return false -- Está evolucionada
+    end
+
+    -- 3. Revisar si tiene un nivel de evolución mayor a 0
+    local evoLevel = pet:FindFirstChild("evolution") or pet:FindFirstChild("evolveLevel") or pet:FindFirstChild("level")
+    if evoLevel and evoLevel:IsA("NumberValue") and evoLevel.Value > 1 then
+        return false -- Si el nivel es mayor a 1, asumimos que está evolucionada
+    end
+
+    return true
+end
+
+tabs.quests:AddSwitch("Auto Fusionar (Filtro Inteligente)", function(state)
     tabs.quests.FusionData.Running = state
     if not state then
         fusionStatus:SetText("Status: Inactive")
@@ -5540,18 +5565,27 @@ tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
             local petsFolder = player:FindFirstChild("petsFolder")
             local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
 
-            if not uniquePets or #uniquePets:GetChildren() < 2 then
-                fusionStatus:SetText("Status: Necesitas al menos 2 mascotas para fusionar.")
+            if not uniquePets then
+                fusionStatus:SetText("Status: Abre tu inventario de mascotas únicas...")
                 task.wait(2)
                 continue
             end
 
-            -- 1. ORDENAR MASCOTAS POR PODER (De mayor a menor)
-            local sortedPets = {}
+            -- 1. FILTRAR Y ORDENAR MASCOTAS VÁLIDAS
+            local validPets = {}
             for _, pet in ipairs(uniquePets:GetChildren()) do
-                table.insert(sortedPets, { Pet = pet, Power = getPetPower(pet) })
+                if isValidForFusion(pet) then
+                    table.insert(validPets, { Pet = pet, Power = getPetPower(pet) })
+                end
             end
-            table.sort(sortedPets, function(a, b) return a.Power > b.Power end)
+
+            if #validPets < 2 then
+                fusionStatus:SetText("Status: No hay suficientes mascotas válidas (únicas, sin candado, sin evolucionar).")
+                task.wait(3)
+                continue
+            end
+
+            table.sort(validPets, function(a, b) return a.Power > b.Power end)
 
             -- 2. BUSCAR EL BOTÓN DE FUSIÓN EN LA PANTALLA
             local fusionButton = nil
@@ -5560,7 +5594,6 @@ tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
             local function findFusionButton(obj)
                 if obj:IsA("TextButton") or obj:IsA("ImageButton") then
                     local nameLower = string.lower(obj.Name)
-                    -- Buscamos botones que digan Fusion, Combine, Mix o que estén en un menú de fusión
                     if string.find(nameLower, "fusion") or string.find(nameLower, "combine") or string.find(nameLower, "mix") then
                         if obj.Visible and obj.Active then
                             fusionButton = obj
@@ -5576,8 +5609,7 @@ tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
             if playerGui then findFusionButton(playerGui) end
 
             if fusionButton then
-                fusionStatus:SetText("Status: ¡Fusionando!")
-                -- Si encontramos el botón, lo clickeamos con VirtualUser para simular un clic real
+                fusionStatus:SetText("Status: Fusionando las 2 mejores válidas...")
                 pcall(function()
                     services.VirtualUser:Button1Down(Vector2.new(fusionButton.AbsolutePosition.X + fusionButton.AbsoluteSize.X/2, fusionButton.AbsolutePosition.Y + fusionButton.AbsoluteSize.Y/2))
                     task.wait(0.1)
@@ -5585,10 +5617,9 @@ tabs.quests:AddSwitch("Auto Fusionar (Mejor Combinación)", function(state)
                 end)
                 task.wait(2) -- Espera a que termine la animación de fusión
             else
-                -- Si no encontramos el botón, solo mostramos las mejores mascotas
-                local bestPet = sortedPets[1]
-                local secondBest = sortedPets[2]
-                fusionStatus:SetText("Status: Mejores: " .. bestPet.Pet.Name .. " + " .. secondBest.Pet.Name .. " | Abre el menú de Fusión.")
+                local bestPet = validPets[1]
+                local secondBest = validPets[2]
+                fusionStatus:SetText("Status: Mejores válidas: " .. bestPet.Pet.Name .. " + " .. secondBest.Pet.Name .. " | Abre el menú de Fusión.")
                 task.wait(1)
             end
         end
