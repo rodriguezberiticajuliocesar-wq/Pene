@@ -5285,12 +5285,10 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
--- TAB MISIONES (Auto Enchant Quest)
+-- TAB MISIONES (Auto Enchant Quests)
 -- ═══════════════════════════════════════════════════════════════
 
-tabs.quests:AddSection("Misiones de Encantamiento")
-
-local enchantQuestStatus = tabs.quests:AddLabel("Status: Inactive")
+tabs.quests:AddSection("Auto Enchant Quests")
 
 tabs.quests.EnchantData = { 
     Running = false, 
@@ -5298,14 +5296,13 @@ tabs.quests.EnchantData = {
     SelectedQuest = "Todas" 
 }
 
--- Dropdown para elegir la misión
-local enchantQuestDropdown = tabs.quests:AddDropdown("Seleccionar Misión", function(selection)
+local enchantQuestStatus = tabs.quests:AddLabel("Status: Inactive")
+
+local enchantDropdown = tabs.quests:AddDropdown("Misión de Encantamiento", function(selection)
     tabs.quests.EnchantData.SelectedQuest = selection
 end)
-enchantQuestDropdown:Add("Todas")
-enchantQuestDropdown:Add("Mystic Evolution")
-enchantQuestDropdown:Add("Pet Trainer")
-enchantQuestDropdown:Add("Mega Collector")
+enchantDropdown:Add("Todas")
+enchantDropdown:Add("Mystic Evolution")
 
 tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
     tabs.quests.EnchantData.Running = state
@@ -5327,7 +5324,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
             local enchantFolder = questsFolder and questsFolder:FindFirstChild("Enchant Quests")
 
             if not enchantFolder then
-                enchantQuestStatus:SetText("Status: Abre el menú de misiones en el juego...")
+                enchantQuestStatus:SetText("Status: Abre el menú de misiones...")
                 task.wait(2)
                 continue
             end
@@ -5335,7 +5332,6 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
             local activeQuest = nil
             local activeReq = nil
 
-            -- Buscar la misión seleccionada
             for _, quest in ipairs(enchantFolder:GetChildren()) do
                 local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
                                    (quest.Name == tabs.quests.EnchantData.SelectedQuest)
@@ -5365,7 +5361,6 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
 
                 local reqNameLower = string.lower(activeReq)
                 
-                -- Lógica para completar la tarea
                 if string.find(reqNameLower, "evolve") then
                     local petsFolder = player:FindFirstChild("petsFolder")
                     local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
@@ -5393,16 +5388,18 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                     pcall(function() player.muscleEvent:FireServer("rep") end)
                     task.wait(0.1)
 
-                elseif string.find(reqNameLower, "hatch") or string.find(reqNameLower, "pet") then
-                    task.wait(1)
+                elseif string.find(reqNameLower, "kill") or string.find(reqNameLower, "brawl") then
+                    _G.killAll = true
+                    task.wait(0.5)
 
                 else
                     task.wait(1)
                 end
 
             else
-                -- Reclamar si está completo
+                _G.killAll = false
                 local claimedAny = false
+
                 for _, quest in ipairs(enchantFolder:GetChildren()) do
                     local isSelected = (tabs.quests.EnchantData.SelectedQuest == "Todas") or 
                                        (quest.Name == tabs.quests.EnchantData.SelectedQuest)
@@ -5428,7 +5425,7 @@ tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
                 end
 
                 if not claimedAny then
-                    enchantQuestStatus:SetText("Status: Todas completadas. Esperando...")
+                    enchantQuestStatus:SetText("Status: Sin misiones completadas. Esperando...")
                 end
             end
             task.wait(0.5)
