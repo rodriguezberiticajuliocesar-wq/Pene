@@ -5284,6 +5284,95 @@ task.spawn(function()
     end
 end)
 -- ═══════════════════════════════════════════════════════════════
+-- AUTO QUEST Y AUTO CLAIM (Misiones Completadas)
+-- ═══════════════════════════════════════════════════════════════
+
+tabs.inventory:AddSection("Auto Quests (Daily / Weekly / Enchant)")
+
+local questStatusLabel = tabs.inventory:AddLabel("Status: Inactive")
+local autoClaimRunning = false
+
+tabs.inventory:AddSwitch("Auto Reclamar Misiones", function(state)
+    autoClaimRunning = state
+    if not state then
+        questStatusLabel:SetText("Status: Inactive")
+        return
+    end
+
+    questStatusLabel:SetText("Status: Monitoreando misiones...")
+    
+    task.spawn(function()
+        local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
+        local questsEvent = rEvents and rEvents:FindFirstChild("questsEvent")
+        
+        if not questsEvent then
+            utils.notify("Auto Quest", "No se encontró questsEvent", 4, "error")
+            return
+        end
+
+        while utils.isCurrent() and autoClaimRunning do
+            local questsFolder = player:FindFirstChild("Quests")
+            if questsFolder then
+                local claimedAny = false
+                
+                -- Función interna para revisar una carpeta de misiones
+                local function checkQuestFolder(folder)
+                    if not folder then return end
+                    for _, quest in ipairs(folder:GetChildren()) do
+                        local reqs = quest:FindFirstChild("requirements")
+                        if reqs then
+                            local isComplete = true
+                            local hasRequirement = false
+                            
+                            -- Revisamos todos los requisitos (pueden ser varios)
+                            for _, req in ipairs(reqs:GetChildren()) do
+                                local prog = req:FindFirstChild("progress")
+                                if prog then
+                                    hasRequirement = true
+                                    -- Si el progreso es menor al objetivo, no está completo
+                                    if prog.Value < req.Value then
+                                        isComplete = false
+                                        break
+                                    end
+                                end
+                            end
+
+                            -- Si tiene requisitos y todos están completos
+                            if hasRequirement and isComplete then
+                                -- Reclamar la recompensa
+                                questStatusLabel:SetText("Status: Reclamando " .. quest.Name)
+                                pcall(function()
+                                    -- Intentamos con el nombre de la misión
+                                    questsEvent:FireServer("claimQuest", quest.Name)
+                                    task.wait(0.2)
+                                    -- Por si acaso el juego usa un ID en lugar del nombre
+                                    local originalQuest = quest:FindFirstChild("originalQuest")
+                                    if originalQuest and originalQuest.Value then
+                                        questsEvent:FireServer("claimQuest", originalQuest.Value)
+                                    end
+                                end)
+                                claimedAny = true
+                                task.wait(1) -- Espera para no saturar el servidor
+                            end
+                        end
+                    end
+                end
+
+                -- Revisamos las 3 categorías que vimos en tu consola
+                checkQuestFolder(questsFolder:FindFirstChild("Daily Quests"))
+                checkQuestFolder(questsFolder:FindFirstChild("Weekly Quests"))
+                checkQuestFolder(questsFolder:FindFirstChild("Enchant Quests"))
+
+                if not claimedAny then
+                    questStatusLabel:SetText("Status: Sin misiones completadas")
+                end
+            end
+            task.wait(2) -- Revisa cada 2 segundos
+        end
+        questStatusLabel:SetText("Status: Inactive")
+    end)
+end)
+-- ═══════════════════════════════════════════════════════════════
 -- EMERGENCY STOP
 -- ═══════════════════════════════════════════════════════════════
 tabs.info:AddSection("Emergency")
