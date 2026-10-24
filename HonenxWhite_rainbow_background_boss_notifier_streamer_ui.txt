@@ -4129,6 +4129,70 @@ tabs.rep:AddSwitch("🚀 Ultra Fast Rep (Global)", function(state)
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- AUTO-RACE / AUTO-BRAWL (Nueva Zona)
+-- ═══════════════════════════════════════════════════════════════
+
+tabs.rep:AddSection("Nueva Zona (Race / Brawl)")
+
+local raceStatus = tabs.rep:AddLabel("Status: Inactive")
+local raceRunning = false
+
+tabs.rep:AddSwitch("Auto Unirse a Carrera (Brawl)", function(state)
+    raceRunning = state
+    if not state then
+        raceStatus:SetText("Status: Inactive")
+        return
+    end
+    
+    raceStatus:SetText("Status: Buscando caja de carreras...")
+    
+    task.spawn(function()
+        local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
+        local machineRemote = rEvents and rEvents:FindFirstChild("machineInteractRemote")
+        local brawlEvent = rEvents and rEvents:FindFirstChild("brawlEvent")
+        
+        while utils.isCurrent() and raceRunning do
+            -- 1. Buscar la caja de carreras en el mapa
+            local cajaCarrera = nil
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "box", 1, true) or string.find(string.lower(obj.Name), "race", 1, true)) then
+                    local char = player.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and (hrp.Position - obj.Position).Magnitude < 100 then
+                        cajaCarrera = obj
+                        break
+                    end
+                end
+            end
+            
+            if cajaCarrera and machineRemote then
+                raceStatus:SetText("Status: Entrando a la carrera...")
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    pcall(function()
+                        hrp.CFrame = CFrame.new(cajaCarrera.Position + Vector3.new(0, 3, 0))
+                    end)
+                    task.wait(0.5)
+                    pcall(function()
+                        machineRemote:InvokeServer("interact", cajaCarrera)
+                    end)
+                    if brawlEvent then
+                        pcall(function()
+                            brawlEvent:FireServer("joinBrawl")
+                        end)
+                    end
+                    task.wait(5)
+                end
+            else
+                raceStatus:SetText("Status: No encuentro la caja. Acércate a la zona de carreras.")
+                task.wait(2)
+            end
+        end
+    end)
+end)
+
 -- Fast Rebirth
 tabs.rebirth:AddSection("Fast Rebirth")
 
