@@ -1931,22 +1931,30 @@ end)
 
 tabs.main:AddSection("Visuals / UI")
 
--- Streamer Mode: oculta solo las interfaces listadas del juego y restaura sus estados originales.
+-- Streamer Mode: oculta las interfaces locales del juego y permite restaurarlas.
+-- La GUI del propio HonenxWhite se excluye para que el interruptor siga accesible.
 tabs.main.StreamerMode = false
 local streamerGuiOriginals = setmetatable({}, { __mode = "k" })
 local streamerObjectOriginals = setmetatable({}, { __mode = "k" })
-local streamerGuiNames = {
-    "halloweenGui", "statEffectsGui", "petGui", "questsGui",
-    "cPetShopGui", "clanGui", "gameGui", "topbarGui",
-    "dailyRewardsGui", "petEnchantGui", "onboardingGui"
-}
+local streamerKnownGuis = setmetatable({}, { __mode = "k" })
+
+local function isStreamerGui(instance)
+    return instance:IsA("ScreenGui") or instance:IsA("BillboardGui") or instance:IsA("SurfaceGui")
+end
+
+local function isHonenGui(gui)
+    local name = string.lower(gui.Name)
+    return string.find(name, "honen", 1, true) ~= nil
+        or string.find(name, "whitehub", 1, true) ~= nil
+        or string.find(name, "white hub", 1, true) ~= nil
+end
 
 local function rememberStreamerObject(object)
-    if streamerObjectOriginals[object] then return end
+    if streamerObjectOriginals[object] ~= nil then return end
     local original = {}
     pcall(function()
         if object:IsA("GuiObject") then original.Visible = object.Visible end
-        if object:IsA("Frame") or object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+        if object:IsA("Frame") or object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") or object:IsA("ScrollingFrame") then
             original.BackgroundTransparency = object.BackgroundTransparency
         end
         if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
@@ -1955,63 +1963,85 @@ local function rememberStreamerObject(object)
         end
         if object:IsA("ImageLabel") or object:IsA("ImageButton") then
             original.ImageTransparency = object.ImageTransparency
-            original.BackgroundTransparency = object.BackgroundTransparency
         end
         if object:IsA("UIStroke") then original.Transparency = object.Transparency end
     end)
     streamerObjectOriginals[object] = original
 end
 
-local function setGameStreamerMode(state)
-    tabs.main.StreamerMode = state == true
-    local playerGui = player:FindFirstChildOfClass("PlayerGui")
-    if not playerGui then return end
+local function collectStreamerGuis(root, results)
+    for _, child in ipairs(root:GetChildren()) do
+        if isStreamerGui(child) then
+            if not isHonenGui(child) then table.insert(results, child) end
+        elseif child:IsA("Folder") then
+            collectStreamerGuis(child, results)
+        end
+    end
+end
 
-    for _, guiName in ipairs(streamerGuiNames) do
-        local gui = playerGui:FindFirstChild(guiName)
-        if gui and gui:IsA("ScreenGui") then
-            if streamerGuiOriginals[gui] == nil then
-                streamerGuiOriginals[gui] = gui.Enabled
-            end
-            if state then
+local function setGameStreamerMode(state)
+    state = state == true
+    tabs.main.StreamerMode = state
+    local playerGui = player:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then
+        utils.notify("Modo Streamer", "No se encontró PlayerGui", 3, "warning")
+        return
+    end
+
+    if state then
+        local guisEncontradas = {}
+        collectStreamerGuis(playerGui, guisEncontradas)
+        for _, gui in ipairs(guisEncontradas) do
+            streamerKnownGuis[gui] = true
+            pcall(function()
+                if streamerGuiOriginals[gui] == nil then
+                    streamerGuiOriginals[gui] = gui.Enabled
+                end
                 for _, descendant in ipairs(gui:GetDescendants()) do
                     rememberStreamerObject(descendant)
-                    pcall(function()
-                        if descendant:IsA("GuiObject") then descendant.Visible = false end
-                        if descendant:IsA("UIStroke") then descendant.Transparency = 1 end
-                        if descendant:IsA("Frame") or descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
-                            descendant.BackgroundTransparency = 1
-                        end
-                        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
-                            descendant.TextTransparency = 1
-                            descendant.TextStrokeTransparency = 1
-                        end
-                        if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
-                            descendant.ImageTransparency = 1
-                            descendant.BackgroundTransparency = 1
-                        end
-                    end)
+                    if descendant:IsA("GuiObject") then descendant.Visible = false end
+                    if descendant:IsA("UIStroke") then descendant.Transparency = 1 end
+                    if descendant:IsA("Frame") or descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") or descendant:IsA("ScrollingFrame") then
+                        descendant.BackgroundTransparency = 1
+                    end
+                    if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
+                        descendant.TextTransparency = 1
+                        descendant.TextStrokeTransparency = 1
+                    end
+                    if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
+                        descendant.ImageTransparency = 1
+                    end
                 end
                 gui.Enabled = false
-            else
-                gui.Enabled = streamerGuiOriginals[gui]
-                for _, descendant in ipairs(gui:GetDescendants()) do
-                    local original = streamerObjectOriginals[descendant]
-                    if original then
-                        pcall(function()
+            end)
+        end
+        print("[HonenxWhite] " .. #guisEncontradas .. " interfaces locales ocultadas.")
+        utils.notify("Modo Streamer", tostring(#guisEncontradas) .. " interfaces del juego ocultadas", 3, "success")
+    else
+        local restored = 0
+        for gui in pairs(streamerKnownGuis) do
+            pcall(function()
+                if gui and gui.Parent then
+                    local originalEnabled = streamerGuiOriginals[gui]
+                    if originalEnabled ~= nil then gui.Enabled = originalEnabled end
+                    for _, descendant in ipairs(gui:GetDescendants()) do
+                        local original = streamerObjectOriginals[descendant]
+                        if original then
                             for property, value in pairs(original) do
                                 descendant[property] = value
                             end
-                        end)
-                        streamerObjectOriginals[descendant] = nil
+                            streamerObjectOriginals[descendant] = nil
+                        end
                     end
+                    restored += 1
                 end
-                streamerGuiOriginals[gui] = nil
-            end
+            end)
+            streamerGuiOriginals[gui] = nil
+            streamerKnownGuis[gui] = nil
         end
+        print("[HonenxWhite] " .. restored .. " interfaces locales restauradas.")
+        utils.notify("Modo Streamer", "Interfaces del juego restauradas", 3, "info")
     end
-
-    utils.notify("Modo Streamer", state and "Interfaces del juego ocultas localmente" or "Interfaces del juego restauradas", 3, state and "success" or "info")
 end
 
 tabs.main:AddSwitch("Modo Streamer (Ocultar UI del Juego)", function(state)
@@ -2616,7 +2646,7 @@ end, {clear = true})
 -- Por seguridad, pega aquí un webhook NUEVO; el enlace compartido
 -- anteriormente debe considerarse expuesto y conviene revocarlo.
 -- ═══════════════════════════════════════════════════════════════
-local WEBHOOK_URL = "" -- Pega aquí tu webhook nuevo de Discord.
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1563521618586640384/5-4gGGyp8ozF1sMTwWfR7p1COzGRJEfSWaLk_2l4_nmDtgCGZ2aIUuqK28kOSKdq7Aw4" 
 local HttpService = game:GetService("HttpService")
 local bossEnviados = setmetatable({}, { __mode = "k" })
 local bossNotifierEnabled = false
