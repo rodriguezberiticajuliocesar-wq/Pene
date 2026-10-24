@@ -968,7 +968,7 @@ local KNI = (function()
         local translations = {
             ["Casa"] = "Home", ["Combate"] = "Combat", ["Entrenamiento"] = "Training",
             ["Repetición"] = "Repetition", ["Jefes"] = "Bosses", ["Mascotas"] = "Pets",
-            ["Misiones"] = "Quests", ["Mejoras"] = "Upgrades", ["Teletransporte"] = "Teleport",
+            ["Mejoras"] = "Upgrades", ["Teletransporte"] = "Teleport",
             ["Estadísticas"] = "Statistics", ["Información"] = "Information",
             ["Ajustes"] = "Settings", ["Volver"] = "Back", ["Cerrar"] = "Close",
             ["Minimizar"] = "Minimize", ["Activado"] = "Enabled", ["Desactivado"] = "Disabled",
@@ -1815,7 +1815,6 @@ local tabs = {
     rebirth   = window:AddTab("Rebirth"),
     boss      = window:AddTab("Jefes"),
     inventory = window:AddTab("Mascotas"),
-    quests    = window:AddTab("Misiones"), 
     boosts    = window:AddTab("Mejoras"),
     teleport  = window:AddTab("Teletransporte"),
     stats     = window:AddTab("Estadísticas"),
@@ -5714,286 +5713,95 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- TAB MISIONES (Auto Enchant Quests - Diccionario Definitivo)
+-- Tab Misiones y todas sus opciones eliminados a petición del usuario.
+
 -- ═══════════════════════════════════════════════════════════════
-
-tabs.quests:AddSection("Enchant")
-
-tabs.quests.EnchantData = { 
-    Running = false, 
-    WorkerActive = false,
-    SelectedQuest = "Auto", -- detecta automáticamente cualquier misión de Enchant
-    ActiveTask = "Esperando..."
+-- CASA: NOCLIP Y AUTO RACE EN LÍNEA RECTA
+-- ═══════════════════════════════════════════════════════════════
+local houseMovement = {
+    NoclipEnabled = false, AutoRaceEnabled = false,
+    NoclipConnection = nil, RaceConnection = nil,
+    OriginalCollisions = setmetatable({}, { __mode = "k" }), RaceDirection = nil,
 }
 
-local enchantQuestStatus = tabs.quests:AddLabel("Status: Inactive")
-local taskInfoLabel = tabs.quests:AddLabel("Tarea actual: Ninguna")
-
--- Sin dropdown: el trabajador detecta automáticamente la misión activa de Enchant.
-
--- Busca los datos de Enchant sin confundirlos con la interfaz (questsGui/QuestsEnchant).
--- La interfaz de tus capturas es una GUI; las misiones que se procesan deben tener
--- requisitos con Value y progress.
-local function findEnchantQuestDataFolder()
-    local questsFolder = player:FindFirstChild("Quests")
-    local direct = questsFolder and questsFolder:FindFirstChild("Enchant Quests")
-    if direct then return direct end
-
-    local function looksLikeQuestData(obj)
-        if not (obj:IsA("Folder") or obj:IsA("Configuration")) then return false end
-        local children = obj:GetChildren()
-        for _, quest in ipairs(children) do
-            local reqs = quest:FindFirstChild("requirements")
-            if reqs then
-                for _, req in ipairs(reqs:GetChildren()) do
-                    local progress = req:FindFirstChild("progress")
-                    if progress and (progress:IsA("NumberValue") or progress:IsA("IntValue"))
-                        and (req:IsA("NumberValue") or req:IsA("IntValue")) then
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end
-
-    -- Recorre los datos del jugador como alternativa si la carpeta cambió de ubicación/nombre.
-    for _, obj in ipairs(player:GetDescendants()) do
-        if (obj.Name == "Enchant Quests" or obj.Name == "EnchantQuests" or obj.Name == "enchantQuestList")
-            and looksLikeQuestData(obj) then
-            return obj
-        end
-    end
-    return nil
+local function getMovementCharacter()
+    local character = player.Character
+    if not character then return nil, nil, nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return character, nil, nil end
+    return character, humanoid, root
 end
 
-tabs.quests:AddSwitch("Auto Completar y Reclamar", function(state)
-    tabs.quests.EnchantData.Running = state
-    if not state then
-        enchantQuestStatus:SetText("Status: Inactive")
-        taskInfoLabel:SetText("Tarea actual: Ninguna")
-        _G.killAll = false
-        if tabs.farming and tabs.farming.RockSwitch then tabs.farming.RockSwitch:Set(false, true) end
-        if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(false, true) end
-        if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(false, true) end
-        return
+local function setHouseNoclip(enabled)
+    houseMovement.NoclipEnabled = enabled
+    if houseMovement.NoclipConnection then
+        houseMovement.NoclipConnection:Disconnect()
+        houseMovement.NoclipConnection = nil
     end
-    if tabs.quests.EnchantData.WorkerActive then return end
-    tabs.quests.EnchantData.WorkerActive = true
-
-    task.spawn(function()
-        local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
-        local questsEvent = rEvents and rEvents:FindFirstChild("questsEvent")
-        local petEvolveEvent = rEvents and rEvents:FindFirstChild("petEvolveEvent")
-        
-        local petShopRemote = tabs.inventory.PetShopRemote
-        local petShopFolder = tabs.inventory.PetShopFolder
-        local lastAgilityTP = 0
-        local lastBrawlJoin = 0
-        
-        while utils.isCurrent() and tabs.quests.EnchantData.Running do
-            local enchantFolder = findEnchantQuestDataFolder()
-
-            if not enchantFolder then
-                enchantQuestStatus:SetText("Status: No encuentro los datos de Enchant; abre Misiones y vuelve a probar.")
-                task.wait(2)
-                continue
-            end
-
-            local activeQuest = nil
-            local activeReq = nil
-
-            for _, quest in ipairs(enchantFolder:GetChildren()) do
-                -- Examina todas las misiones de Enchant automáticamente.
-                local isSelected = true
-
-                if isSelected then
-                    local reqs = quest:FindFirstChild("requirements")
-                    if reqs then
-                        for _, req in ipairs(reqs:GetChildren()) do
-                            local prog = req:FindFirstChild("progress")
-                            if prog and prog.Value < req.Value then
-                                activeQuest = quest
-                                activeReq = req.Name
-                                break
-                            end
-                        end
+    if enabled then
+        houseMovement.NoclipConnection = services.RunService.Stepped:Connect(function()
+            local character = player.Character
+            if not character then return end
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    if houseMovement.OriginalCollisions[part] == nil then
+                        houseMovement.OriginalCollisions[part] = part.CanCollide
                     end
-                end
-                if activeQuest then break end
-            end
-
-            if activeQuest and activeReq then
-                local reqObj = activeQuest.requirements:FindFirstChild(activeReq)
-                local progress = reqObj:FindFirstChild("progress").Value
-                local target = reqObj.Value
-
-                tabs.quests.EnchantData.ActiveTask = activeReq
-                enchantQuestStatus:SetText("Status: " .. activeQuest.Name)
-                taskInfoLabel:SetText("Tarea: " .. activeReq .. " (" .. progress .. "/" .. target .. ")")
-
-                local cleanReq = string.lower(activeReq)
-                
-                -- Función para detectar si la tarea contiene alguna palabra clave
-                local function contains(list)
-                    for _, word in ipairs(list) do
-                        if string.find(cleanReq, word) then return true end
-                    end
-                    return false
-                end
-
-                -- ==========================================
-                -- SÚPER DICCIONARIO DE PALABRAS CLAVE
-                -- ==========================================
-
-                -- RUNE AGILITY / AGILITY: teletransporte cada segundo mientras esta tarea siga activa.
-                -- Se comprueban tanto el nombre de la misión como el requisito.
-                local questAndReq = string.lower(tostring(activeQuest.Name) .. " " .. tostring(activeReq))
-                if string.find(questAndReq, "agility", 1, true) then
-                    taskInfoLabel:SetText("Rune Agility: teletransportando...")
-                    if tick() - lastAgilityTP >= 1 then
-                        pcall(function()
-                            local character = player.Character or player.CharacterAdded:Wait()
-                            local hrp = character:FindFirstChild("HumanoidRootPart")
-                            if hrp then
-                                hrp.CFrame = CFrame.new(224.54, 7.79, 218.98)
-                            end
-                        end)
-                        lastAgilityTP = tick()
-                    end
-                end
-
-                -- 1. EVOLUCIONAR / MASCOTAS
-                if contains({"evolve", "evo", "upgrade", "pet", "mascot", "fusion", "combine"}) then
-                    local petsFolder = player:FindFirstChild("petsFolder")
-                    local uniquePets = petsFolder and petsFolder:FindFirstChild("Unique")
-                    local hasPets = uniquePets and #uniquePets:GetChildren() > 0
-
-                    if not hasPets then
-                        taskInfoLabel:SetText("Comprando pet barato...")
-                        if petShopFolder and petShopRemote then
-                            local cheapest = petShopFolder:GetChildren()[1]
-                            if cheapest then pcall(function() petShopRemote:InvokeServer(cheapest) end) end
-                        end
-                        task.wait(1.5)
-                    else
-                        taskInfoLabel:SetText("Evolucionando mascotas...")
-                        for _, pet in ipairs(uniquePets:GetChildren()) do
-                            if not tabs.quests.EnchantData.Running then break end
-                            pcall(function() petEvolveEvent:FireServer("evolvePet", pet.Name) end)
-                            task.wait(0.1)
-                        end
-                    end
-
-                -- 2. FUERZA / REPS / GIMNASIO
-                elseif contains({"gain", "strength", "weight", "devoted", "rep", "muscle", "exercise", "train", "lift", "squat", "machine", "gym"}) then
-                    taskInfoLabel:SetText("Activando Entrenamiento / Reps...")
-                    -- Activa las máquinas del Hub si es de máquinas
-                    if string.find(cleanReq, "machine") or string.find(cleanReq, "squat") or string.find(cleanReq, "lift") or string.find(cleanReq, "gym") then
-                        if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(true, true) end
-                        if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(true, true) end
-                    else
-                        pcall(function() player.muscleEvent:FireServer("rep") end)
-                    end
-                    task.wait(0.05)
-
-                -- 3. JOIN A BRAWL: intentar unirse mientras este requisito siga pendiente.
-                elseif string.find(cleanReq, "brawl", 1, true) then
-                    taskInfoLabel:SetText("Join a Brawl: intentando entrar...")
-                    if tick() - lastBrawlJoin >= 2 then
-                        local brawlEvent = rEvents and rEvents:FindFirstChild("brawlEvent")
-                        if brawlEvent and brawlEvent:IsA("RemoteEvent") then
-                            pcall(function()
-                                brawlEvent:FireServer("joinBrawl")
-                            end)
-                        end
-                        lastBrawlJoin = tick()
-                    end
-                    task.wait(0.5)
-
-                -- 4. MATAR / COMBATE
-                elseif contains({"kill", "punch", "player", "fight", "combat", "defeat", "eliminat", "pvp"}) then
-                    taskInfoLabel:SetText("Activando Kill Aura / Combate...")
-                    _G.killAll = true
-                    task.wait(0.5)
-
-                -- 5. ROCAS / DURABILIDAD
-                elseif contains({"rock", "dura", "punching", "mine", "mining"}) then
-                    taskInfoLabel:SetText("Activando Auto Rock...")
-                    if tabs.farming and tabs.farming.RockSwitch then
-                        tabs.farming.RockSwitch:Set(true, true)
-                    end
-                    task.wait(1)
-
-                -- 6. HUEVOS / ABRIR
-                elseif contains({"hatch", "egg", "open", "spin", "wheel"}) then
-                    taskInfoLabel:SetText("Esperando abrir huevos...")
-                    task.wait(1)
-
-                -- 7. REBIRTH / RESET
-                elseif contains({"rebirth", "reset", "prestige", "ascend"}) then
-                    taskInfoLabel:SetText("Activando Auto Rebirth...")
-                    pcall(function()
-                        services.ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest")
-                    end)
-                    task.wait(1)
-
-                -- 8. TIEMPO / AFK
-                elseif contains({"minute", "time", "play", "online", "hour"}) then
-                    taskInfoLabel:SetText("Esperando tiempo (AFK)...")
-                    task.wait(5)
-
-                -- 9. TAREA DESCONOCIDA
-                else
-                    taskInfoLabel:SetText("Tarea desconocida ("..activeReq.."). Haciendo reps...")
-                    pcall(function() player.muscleEvent:FireServer("rep") end)
-                    task.wait(0.1)
-                end
-
-            else
-                -- RECLAMAR
-                _G.killAll = false
-                if tabs.farming and tabs.farming.RockSwitch then tabs.farming.RockSwitch:Set(false, true) end
-                if tabs.farming and tabs.farming.SquatExerciseSwitch then tabs.farming.SquatExerciseSwitch:Set(false, true) end
-                if tabs.farming and tabs.farming.LiftExerciseSwitch then tabs.farming.LiftExerciseSwitch:Set(false, true) end
-
-                local claimedAny = false
-
-                for _, quest in ipairs(enchantFolder:GetChildren()) do
-                    -- Reclama cualquier misión de Enchant completada, sin filtro de dropdown.
-                    local isSelected = true
-                    
-                    if isSelected then
-                        local reqs = quest:FindFirstChild("requirements")
-                        if reqs then
-                            local allComplete = true
-                            for _, req in ipairs(reqs:GetChildren()) do
-                                local prog = req:FindFirstChild("progress")
-                                if prog and prog.Value < req.Value then allComplete = false break end
-                            end
-                            if allComplete then
-                                taskInfoLabel:SetText("¡Misión completada! Reclamando...")
-                                if questsEvent then
-                                    pcall(function() questsEvent:FireServer("claimQuest", quest.Name) end)
-                                end
-                                claimedAny = true
-                                task.wait(2)
-                            end
-                        end
-                    end
-                end
-
-                if not claimedAny then
-                    enchantQuestStatus:SetText("Status: Todo completado.")
-                    taskInfoLabel:SetText("Esperando nueva misión...")
+                    part.CanCollide = false
                 end
             end
-            task.wait(0.5)
+        end)
+    else
+        for part, original in pairs(houseMovement.OriginalCollisions) do
+            if part and part.Parent then pcall(function() part.CanCollide = original end) end
+            houseMovement.OriginalCollisions[part] = nil
         end
-        tabs.quests.EnchantData.WorkerActive = false
-    end)
+    end
+end
+
+tabs.main:AddSection("Movimiento")
+tabs.main:AddSwitch("Noclip", function(state)
+    setHouseNoclip(state)
+    utils.notify("Noclip", state and "Activado" or "Desactivado", 2, state and "success" or "info")
 end)
--- ═══════════════════════════════════════════════════════════════
+
+tabs.main:AddSwitch("Auto Race (línea recta)", function(state)
+    houseMovement.AutoRaceEnabled = state
+    if houseMovement.RaceConnection then houseMovement.RaceConnection:Disconnect(); houseMovement.RaceConnection = nil end
+    if state then
+        local _, humanoid, root = getMovementCharacter()
+        if not humanoid or not root then
+            houseMovement.AutoRaceEnabled = false
+            utils.notify("Auto Race", "No se encontró el personaje. Intenta de nuevo.", 3, "error")
+            return
+        end
+        local look = root.CFrame.LookVector
+        local direction = Vector3.new(look.X, 0, look.Z)
+        if direction.Magnitude < 0.001 then direction = Vector3.new(0, 0, -1) end
+        houseMovement.RaceDirection = direction.Unit
+        setHouseNoclip(true)
+        houseMovement.RaceConnection = services.RunService.Heartbeat:Connect(function()
+            if not houseMovement.AutoRaceEnabled then return end
+            local _, currentHumanoid = getMovementCharacter()
+            if currentHumanoid then currentHumanoid:Move(houseMovement.RaceDirection, false) end
+        end)
+        utils.notify("Auto Race", "Corriendo en línea recta. Apágalo para detenerte.", 3, "success")
+    else
+        if houseMovement.RaceConnection then houseMovement.RaceConnection:Disconnect(); houseMovement.RaceConnection = nil end
+        local _, humanoid = getMovementCharacter()
+        if humanoid then humanoid:Move(Vector3.zero, false) end
+        setHouseNoclip(false)
+        houseMovement.RaceDirection = nil
+        utils.notify("Auto Race", "Desactivado", 2, "info")
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.25)
+    if houseMovement.NoclipEnabled then setHouseNoclip(true) end
+end)
+
 -- ANTI-AFK INDEPENDIENTE
 -- ═══════════════════════════════════════════════════════════════
 tabs.main:AddSection("Anti-AFK")
@@ -6036,6 +5844,9 @@ tabs.info:AddButton("🛑 EMERGENCY STOP", function()
     if _G.killAll then _G.killAll = false end
     if _G.killBlacklistedOnly then _G.killBlacklistedOnly = false end
     if _G.HonenxAntiAFK then _G.HonenxAntiAFK = false end
+    houseMovement.AutoRaceEnabled = false
+    if houseMovement.RaceConnection then houseMovement.RaceConnection:Disconnect(); houseMovement.RaceConnection = nil end
+    setHouseNoclip(false)
 
     -- Detener Rep (Fast Rep)
     if tabs.rep and tabs.rep.FastRepData then
