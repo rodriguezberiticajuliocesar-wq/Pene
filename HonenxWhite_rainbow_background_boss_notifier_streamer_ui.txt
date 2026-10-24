@@ -730,9 +730,9 @@ local KNI = (function()
             Position = UDim2.fromScale(0, 0),
             Size = UDim2.fromScale(1, 1),
             BackgroundTransparency = 1,
-            Image = "rbxassetid://6038017775", -- Reemplaza por el ID de Roblox de la imagen adjunta; las imágenes locales no cargan directamente en ImageLabel.
-            ImageTransparency = 0.06,
-            ImageColor3 = Color3.fromRGB(175, 175, 185),
+            Image = "rbxassetid://13915312936", -- Imagen de fondo solicitada por el usuario.
+            ImageTransparency = 0,
+            ImageColor3 = Color3.fromRGB(255, 255, 255),
             ScaleType = Enum.ScaleType.Crop,
             BorderSizePixel = 0,
             ZIndex = 1,
@@ -742,7 +742,7 @@ local KNI = (function()
             Name = "BackgroundShade",
             Size = UDim2.fromScale(1, 1),
             BackgroundColor3 = Color3.fromRGB(4, 4, 9),
-            BackgroundTransparency = 0.56, -- Oscurece sin tapar demasiado la imagen.
+            BackgroundTransparency = 0.72, -- Deja ver claramente la imagen detrás de las opciones.
             BorderSizePixel = 0,
             ZIndex = 1,
         }, root)
@@ -5722,6 +5722,7 @@ local houseMovement = {
     NoclipEnabled = false, AutoRaceEnabled = false,
     NoclipConnection = nil, RaceConnection = nil,
     OriginalCollisions = setmetatable({}, { __mode = "k" }), RaceDirection = nil,
+    AntiRagdollConnection = nil,
 }
 
 local function getMovementCharacter()
@@ -5734,29 +5735,36 @@ local function getMovementCharacter()
 end
 
 local function setHouseNoclip(enabled)
-    houseMovement.NoclipEnabled = enabled
+    houseMovement.NoclipEnabled = enabled == true
     if houseMovement.NoclipConnection then
         houseMovement.NoclipConnection:Disconnect()
         houseMovement.NoclipConnection = nil
     end
     if enabled then
+        -- Desactiva colisiones del personaje para no engancharse en vallas/paredes.
+        -- El suelo se recupera con una comprobación de suelo debajo del root.
         houseMovement.NoclipConnection = services.RunService.Stepped:Connect(function()
-            local character = player.Character
-            if not character then return end
+            local character, humanoid, root = getMovementCharacter()
+            if not character or not humanoid or not root then return end
+            humanoid.PlatformStand = false
+            humanoid.Sit = false
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     if houseMovement.OriginalCollisions[part] == nil then
                         houseMovement.OriginalCollisions[part] = part.CanCollide
                     end
-                    -- Mantener el contacto con el suelo: no desactivar colisión en los pies.
-                    local keepGroundContact =
-                        part.Name == "LeftFoot" or part.Name == "RightFoot" or
-                        part.Name == "Left Leg" or part.Name == "Right Leg"
-                    if keepGroundContact then
-                        part.CanCollide = houseMovement.OriginalCollisions[part]
-                    else
-                        part.CanCollide = false
-                    end
+                    part.CanCollide = false
+                end
+            end
+            -- Si atraviesa el piso al cruzar una pared, busca suelo justo debajo y
+            -- evita una caída continua; no crea plataformas ni modifica el mapa.
+            if root.AssemblyLinearVelocity.Y < -35 then
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = {character}
+                local hit = workspace:Raycast(root.Position, Vector3.new(0, -10, 0), params)
+                if hit and root.Position.Y - hit.Position.Y < 7 then
+                    root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
                 end
             end
         end)
@@ -5768,13 +5776,33 @@ local function setHouseNoclip(enabled)
     end
 end
 
+local function setAntiRagdoll(enabled)
+    if houseMovement.AntiRagdollConnection then
+        houseMovement.AntiRagdollConnection:Disconnect()
+        houseMovement.AntiRagdollConnection = nil
+    end
+    if not enabled then return end
+    houseMovement.AntiRagdollConnection = services.RunService.Heartbeat:Connect(function()
+        local _, humanoid = getMovementCharacter()
+        if not humanoid then return end
+        humanoid.PlatformStand = false
+        humanoid.Sit = false
+        local state = humanoid:GetState()
+        if state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.Ragdoll
+            or state == Enum.HumanoidStateType.Physics then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end)
+end
+
 tabs.main:AddSection("Movimiento")
-tabs.main:AddSwitch("Noclip", function(state)
+tabs.main:AddSwitch("Noclip (atravesar paredes)", function(state)
     setHouseNoclip(state)
+    setAntiRagdoll(state)
     utils.notify("Noclip", state and "Activado" or "Desactivado", 2, state and "success" or "info")
 end)
 
-tabs.main:AddSwitch("Auto Race (línea recta)", function(state)
+tabs.main:AddSwitch("Auto Race (correr sin parar)", function(state)
     houseMovement.AutoRaceEnabled = state
     if houseMovement.RaceConnection then houseMovement.RaceConnection:Disconnect(); houseMovement.RaceConnection = nil end
     if state then
@@ -5789,17 +5817,29 @@ tabs.main:AddSwitch("Auto Race (línea recta)", function(state)
         if direction.Magnitude < 0.001 then direction = Vector3.new(0, 0, -1) end
         houseMovement.RaceDirection = direction.Unit
         setHouseNoclip(true)
-        houseMovement.RaceConnection = services.RunService.Heartbeat:Connect(function()
+        setAntiRagdoll(true)
+        -- Reaplica Move en cada frame para que otros controles no corten la carrera.
+        houseMovement.RaceConnection = services.RunService.RenderStepped:Connect(function()
             if not houseMovement.AutoRaceEnabled then return end
-            local _, currentHumanoid = getMovementCharacter()
-            if currentHumanoid then currentHumanoid:Move(houseMovement.RaceDirection, false) end
+            local _, currentHumanoid, currentRoot = getMovementCharacter()
+            if currentHumanoid and currentRoot and currentHumanoid.Health > 0 then
+                currentHumanoid.PlatformStand = false
+                currentHumanoid.Sit = false
+                currentHumanoid:Move(houseMovement.RaceDirection, false)
+                local state = currentHumanoid:GetState()
+                if state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.Ragdoll
+                    or state == Enum.HumanoidStateType.Physics then
+                    currentHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+            end
         end)
-        utils.notify("Auto Race", "Corriendo en línea recta. Apágalo para detenerte.", 3, "success")
+        utils.notify("Auto Race", "Avanzando continuamente en línea recta. Apágalo para detenerte.", 3, "success")
     else
         if houseMovement.RaceConnection then houseMovement.RaceConnection:Disconnect(); houseMovement.RaceConnection = nil end
         local _, humanoid = getMovementCharacter()
         if humanoid then humanoid:Move(Vector3.zero, false) end
         setHouseNoclip(false)
+        setAntiRagdoll(false)
         houseMovement.RaceDirection = nil
         utils.notify("Auto Race", "Desactivado", 2, "info")
     end
@@ -5808,6 +5848,22 @@ end)
 player.CharacterAdded:Connect(function()
     task.wait(0.25)
     if houseMovement.NoclipEnabled then setHouseNoclip(true) end
+    if houseMovement.AutoRaceEnabled then
+        setAntiRagdoll(true)
+        local _, humanoid, root = getMovementCharacter()
+        if humanoid and root and not houseMovement.RaceConnection then
+            local look = root.CFrame.LookVector
+            local direction = Vector3.new(look.X, 0, look.Z)
+            houseMovement.RaceDirection = direction.Magnitude > 0.001 and direction.Unit or Vector3.new(0, 0, -1)
+            houseMovement.RaceConnection = services.RunService.RenderStepped:Connect(function()
+                local _, h, r = getMovementCharacter()
+                if houseMovement.AutoRaceEnabled and h and r and h.Health > 0 then
+                    h.PlatformStand = false
+                    h:Move(houseMovement.RaceDirection, false)
+                end
+            end)
+        end
+    end
 end)
 
 -- ANTI-AFK INDEPENDIENTE
