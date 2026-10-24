@@ -4091,65 +4091,84 @@ tabs.rep.FastRepToggle = tabs.rep:AddSwitch("Fast Rep (Universal)", function(sta
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- FAST REP PARA NUEVA ZONA (Body Movement)
+-- FAST REP NUEVA ZONA (Con Anti-Expulsión)
 -- ═══════════════════════════════════════════════════════════════
 
-tabs.rep:AddSection("Fast Rep (Nueva Zona)")
+tabs.rep:AddSection("Fast Rep (Nueva Zona Segura)")
 
 local newZoneRepStatus = tabs.rep:AddLabel("Status: Inactive")
 local newZoneRepRunning = false
 
-tabs.rep:AddSwitch("Fast Rep (Mundo Nuevo)", function(state)
+tabs.rep:AddSwitch("Fast Rep (Máquina Segura)", function(state)
     newZoneRepRunning = state
     if not state then
         newZoneRepStatus:SetText("Status: Inactive")
         return
     end
 
-    newZoneRepStatus:SetText("Status: Activo - Moviendo personaje...")
+    newZoneRepStatus:SetText("Status: Buscando máquina...")
 
     task.spawn(function()
-        -- Buscamos el evento de movimiento que vimos en tu consola
         local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
-        local bodyEvent = player:FindFirstChild("bodyMovementEvent") or (rEvents and rEvents:FindFirstChild("bodyMovementEvent"))
-
+        local machineRemote = rEvents and rEvents:FindFirstChild("machineInteractRemote")
+        
         while utils.isCurrent() and newZoneRepRunning do
             local char = player.Character
             local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
-            if char and humanoid and humanoid.Health > 0 and hrp then
-                -- 1. Hacemos que el personaje salte (esto simula actividad física)
-                pcall(function()
-                    humanoid.Jump = true
-                end)
+            
+            if char and humanoid and humanoid.Health > 0 then
+                -- 1. Buscamos la máquina más cercana (que tenga "treadmill", "machine" o "lift" en el nombre)
+                local maquinaCercana = nil
+                local hrp = char:FindFirstChild("HumanoidRootPart")
                 
-                -- 2. Enviamos el evento de movimiento (si el juego lo requiere)
-                if bodyEvent then
-                    pcall(function()
-                        bodyEvent:FireServer("move", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)))
-                    end)
-                end
-                
-                -- 3. Intentamos mandar el "rep" por si acaso en esta zona funciona con otro nombre
-                pcall(function()
-                    if player:FindFirstChild("muscleEvent") then
-                        player.muscleEvent:FireServer("rep")
+                if hrp then
+                    for _, obj in ipairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "treadmill", 1, true) or string.find(string.lower(obj.Name), "machine", 1, true) or string.find(string.lower(obj.Name), "lift", 1, true)) then
+                            if (hrp.Position - obj.Position).Magnitude < 15 then -- Si está a menos de 15 studs
+                                maquinaCercana = obj
+                                break
+                            end
+                        end
                     end
-                end)
+                end
 
-                -- 4. También probamos con el evento de la nueva zona
-                if rEvents then
-                    local machineRemote = rEvents:FindFirstChild("machineInteractRemote")
-                    if machineRemote then
+                if maquinaCercana and machineRemote then
+                    newZoneRepStatus:SetText("Status: Subiendo a la máquina...")
+                    
+                    -- 2. Teletransportarnos a la máquina y sentarnos
+                    pcall(function()
+                        hrp.CFrame = CFrame.new(maquinaCercana.Position + Vector3.new(0, 3, 0))
+                    end)
+                    task.wait(0.5)
+                    
+                    -- 3. Disparar el evento de interactuar (para sentarnos)
+                    pcall(function()
+                        machineRemote:InvokeServer("interact", maquinaCercana)
+                    end)
+                    task.wait(1) -- Esperar a que la animación de sentarse cargue
+                    
+                    -- 4. Ahora mandamos las reps, PERO en pequeñas tandas
+                    newZoneRepStatus:SetText("Status: Haciendo reps seguras...")
+                    for i = 1, 10 do -- Hacemos 10 reps por ciclo
+                        if not newZoneRepRunning then break end
+                        
                         pcall(function()
-                            -- Algunos juegos usan "rep" en la máquina para dar fuerza
+                            if player:FindFirstChild("muscleEvent") then
+                                player.muscleEvent:FireServer("rep")
+                            end
+                            -- También disparamos el evento de la máquina para que el juego crea que estamos interactuando
                             machineRemote:InvokeServer("rep")
                         end)
+                        
+                        task.wait(0.15) -- ⚠️ Pausa de 150ms (Esto evita que el Anti-Cheat te saque)
                     end
+                    
+                    newZoneRepStatus:SetText("Status: Esperando para la siguiente tanda...")
+                    task.wait(1) -- Esperamos un segundo antes de volver a interactuar
+                else
+                    newZoneRepStatus:SetText("Status: Acércate a la máquina (treadmill/lift)...")
+                    task.wait(2)
                 end
-
-                task.wait(0.1) -- Espera un poco para no saturar (100ms)
             else
                 newZoneRepStatus:SetText("Status: Esperando personaje vivo...")
                 task.wait(1)
