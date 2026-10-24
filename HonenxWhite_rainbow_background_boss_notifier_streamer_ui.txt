@@ -4091,7 +4091,7 @@ tabs.rep.FastRepToggle = tabs.rep:AddSwitch("Fast Rep (Universal)", function(sta
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- FAST REP NUEVA ZONA (Con Anti-Expulsión)
+-- FAST REP NUEVA ZONA (Con Teletransporte y Validación)
 -- ═══════════════════════════════════════════════════════════════
 
 tabs.rep:AddSection("Fast Rep (Nueva Zona Segura)")
@@ -4115,58 +4115,61 @@ tabs.rep:AddSwitch("Fast Rep (Máquina Segura)", function(state)
         while utils.isCurrent() and newZoneRepRunning do
             local char = player.Character
             local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             
-            if char and humanoid and humanoid.Health > 0 then
-                -- 1. Buscamos la máquina más cercana (que tenga "treadmill", "machine" o "lift" en el nombre)
+            if char and humanoid and humanoid.Health > 0 and hrp then
+                -- 1. Buscamos la máquina más cercana
                 local maquinaCercana = nil
-                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local distancia = 999
                 
-                if hrp then
-                    for _, obj in ipairs(workspace:GetDescendants()) do
-                        if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "treadmill", 1, true) or string.find(string.lower(obj.Name), "machine", 1, true) or string.find(string.lower(obj.Name), "lift", 1, true)) then
-                            if (hrp.Position - obj.Position).Magnitude < 15 then -- Si está a menos de 15 studs
-                                maquinaCercana = obj
-                                break
-                            end
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") and (string.find(string.lower(obj.Name), "treadmill", 1, true) or string.find(string.lower(obj.Name), "machine", 1, true) or string.find(string.lower(obj.Name), "lift", 1, true)) then
+                        local dist = (hrp.Position - obj.Position).Magnitude
+                        if dist < distancia then
+                            distancia = dist
+                            maquinaCercana = obj
                         end
                     end
                 end
 
                 if maquinaCercana and machineRemote then
+                    -- 2. Teletransportarnos a la máquina (si estamos a más de 10 studs)
+                    if distancia > 10 then
+                        newZoneRepStatus:SetText("Status: Teletransportando a la máquina...")
+                        pcall(function()
+                            hrp.CFrame = CFrame.new(maquinaCercana.Position + Vector3.new(0, 3, 0))
+                        end)
+                        task.wait(0.5)
+                    end
+                    
+                    -- 3. Interactuar con la máquina para sentarnos
                     newZoneRepStatus:SetText("Status: Subiendo a la máquina...")
-                    
-                    -- 2. Teletransportarnos a la máquina y sentarnos
-                    pcall(function()
-                        hrp.CFrame = CFrame.new(maquinaCercana.Position + Vector3.new(0, 3, 0))
-                    end)
-                    task.wait(0.5)
-                    
-                    -- 3. Disparar el evento de interactuar (para sentarnos)
                     pcall(function()
                         machineRemote:InvokeServer("interact", maquinaCercana)
                     end)
-                    task.wait(1) -- Esperar a que la animación de sentarse cargue
+                    task.wait(1) -- Esperar a que el asiento se registre
                     
-                    -- 4. Ahora mandamos las reps, PERO en pequeñas tandas
-                    newZoneRepStatus:SetText("Status: Haciendo reps seguras...")
-                    for i = 1, 10 do -- Hacemos 10 reps por ciclo
-                        if not newZoneRepRunning then break end
-                        
-                        pcall(function()
-                            if player:FindFirstChild("muscleEvent") then
-                                player.muscleEvent:FireServer("rep")
-                            end
-                            -- También disparamos el evento de la máquina para que el juego crea que estamos interactuando
-                            machineRemote:InvokeServer("rep")
-                        end)
-                        
-                        task.wait(0.15) -- ⚠️ Pausa de 150ms (Esto evita que el Anti-Cheat te saque)
+                    -- 4. Verificar si estamos sentados
+                    if humanoid.Sit and humanoid.SeatPart then
+                        newZoneRepStatus:SetText("Status: Sentado. Haciendo reps...")
+                        -- 5. Hacer las reps con pausa para no ser detectado
+                        for i = 1, 10 do
+                            if not newZoneRepRunning then break end
+                            pcall(function()
+                                if player:FindFirstChild("muscleEvent") then
+                                    player.muscleEvent:FireServer("rep")
+                                end
+                            end)
+                            task.wait(0.2) -- 200ms de espera (más seguro)
+                        end
+                        newZoneRepStatus:SetText("Status: Reps completadas. Reintentando...")
+                    else
+                        newZoneRepStatus:SetText("Status: No me senté. Reintentando...")
                     end
                     
-                    newZoneRepStatus:SetText("Status: Esperando para la siguiente tanda...")
-                    task.wait(1) -- Esperamos un segundo antes de volver a interactuar
+                    task.wait(1) -- Esperar antes de la siguiente tanda
                 else
-                    newZoneRepStatus:SetText("Status: Acércate a la máquina (treadmill/lift)...")
+                    newZoneRepStatus:SetText("Status: No encuentro la máquina. Acércate.")
                     task.wait(2)
                 end
             else
@@ -4176,7 +4179,6 @@ tabs.rep:AddSwitch("Fast Rep (Máquina Segura)", function(state)
         end
     end)
 end)
-
 -- Ultra Fast Rep: lote máximo de 20 eventos por ciclo, sin pausas artificiales largas.
 -- Cede el control entre lotes para que el cliente no quede bloqueado y se detiene al apagar.
 tabs.rep:AddSection("Ultra Fast Rep")
