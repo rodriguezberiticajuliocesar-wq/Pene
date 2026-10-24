@@ -4090,6 +4090,74 @@ tabs.rep.FastRepToggle = tabs.rep:AddSwitch("Fast Rep (Universal)", function(sta
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════
+-- FAST REP PARA NUEVA ZONA (Body Movement)
+-- ═══════════════════════════════════════════════════════════════
+
+tabs.rep:AddSection("Fast Rep (Nueva Zona)")
+
+local newZoneRepStatus = tabs.rep:AddLabel("Status: Inactive")
+local newZoneRepRunning = false
+
+tabs.rep:AddSwitch("Fast Rep (Mundo Nuevo)", function(state)
+    newZoneRepRunning = state
+    if not state then
+        newZoneRepStatus:SetText("Status: Inactive")
+        return
+    end
+
+    newZoneRepStatus:SetText("Status: Activo - Moviendo personaje...")
+
+    task.spawn(function()
+        -- Buscamos el evento de movimiento que vimos en tu consola
+        local rEvents = game:GetService("ReplicatedStorage"):FindFirstChild("rEvents")
+        local bodyEvent = player:FindFirstChild("bodyMovementEvent") or (rEvents and rEvents:FindFirstChild("bodyMovementEvent"))
+
+        while utils.isCurrent() and newZoneRepRunning do
+            local char = player.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+            if char and humanoid and humanoid.Health > 0 and hrp then
+                -- 1. Hacemos que el personaje salte (esto simula actividad física)
+                pcall(function()
+                    humanoid.Jump = true
+                end)
+                
+                -- 2. Enviamos el evento de movimiento (si el juego lo requiere)
+                if bodyEvent then
+                    pcall(function()
+                        bodyEvent:FireServer("move", CFrame.new(hrp.Position + Vector3.new(0, 1, 0)))
+                    end)
+                end
+                
+                -- 3. Intentamos mandar el "rep" por si acaso en esta zona funciona con otro nombre
+                pcall(function()
+                    if player:FindFirstChild("muscleEvent") then
+                        player.muscleEvent:FireServer("rep")
+                    end
+                end)
+
+                -- 4. También probamos con el evento de la nueva zona
+                if rEvents then
+                    local machineRemote = rEvents:FindFirstChild("machineInteractRemote")
+                    if machineRemote then
+                        pcall(function()
+                            -- Algunos juegos usan "rep" en la máquina para dar fuerza
+                            machineRemote:InvokeServer("rep")
+                        end)
+                    end
+                end
+
+                task.wait(0.1) -- Espera un poco para no saturar (100ms)
+            else
+                newZoneRepStatus:SetText("Status: Esperando personaje vivo...")
+                task.wait(1)
+            end
+        end
+    end)
+end)
+
 -- Ultra Fast Rep: lote máximo de 20 eventos por ciclo, sin pausas artificiales largas.
 -- Cede el control entre lotes para que el cliente no quede bloqueado y se detiene al apagar.
 tabs.rep:AddSection("Ultra Fast Rep")
