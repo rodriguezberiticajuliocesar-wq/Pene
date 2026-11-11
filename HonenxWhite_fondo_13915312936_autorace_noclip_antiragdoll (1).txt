@@ -4799,9 +4799,6 @@ tabs.boss.findActiveBoss = function(mode)
         return true, stats, health, maxHealth
     end
 
-    -- Zona de Halloween eliminada del juego.
-    return nil
-
     for _, taggedBoss in ipairs(services.CollectionService:GetTagged("BossEventBoss")) do
         if taggedBoss:IsA("Model") and taggedBoss:IsDescendantOf(workspace)
             and tabs.boss.shouldFarmBoss(taggedBoss, mode) then
