@@ -5593,7 +5593,7 @@ tabs.teleport.GymLocations = {
     { name = "Infernal Gym",      pos = CFrame.new(-6759, 7.36, -1284) },
     { name = "Mythical Gym",      pos = CFrame.new(2250, 7.37, 1073.2) },
     { name = "Frost Gym",         pos = CFrame.new(-2623, 7.36, -409) },
-    { name = "Zero Degrees Gym",  pos = CFrame.new(5304.3, 63.4, 1112.1) },
+    { name = "Zero Degrees Gym",  pos = CFrame.new(-5392.64, 46.94, 10632.06) },
 }
 
 for _, gym in ipairs(tabs.teleport.GymLocations) do
